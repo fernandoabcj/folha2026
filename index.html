@@ -327,6 +327,7 @@ body.exact .kpi .val{font-size:1.12rem;letter-spacing:-.01em}
   <div class="kpis" id="kpis-out"></div>
   <div class="ctrls">
         <label class="ctrl">Mostrar<select id="o-fil"><option value="">Todas as linhas</option><option value="neg">Só linhas com empenho insuficiente</option><option value="cel">Só células sem crédito para o reforço</option></select></label>
+    <label class="ctrl" style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" id="o-rat" checked> Ratear inativos e pensionistas do HULW pela proporção do SIAFI (os blocos de UORG do HULW não contêm aposentados)</label>
     <label class="ctrl" style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" id="o-sub" checked> Mostrar subitens (natureza detalhada × NE) dentro de cada natureza</label>
     <label class="ctrl" style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" id="o-est" checked> Incluir estimativas para o que o relatório não traz (pensionistas = setembro no DDP; patronal = 22% da base PSS)</label>
   </div>
@@ -990,14 +991,27 @@ function mapNDD(nd){
   return {a:'OCC',pi:''};
 }
 function piFor(loc, suf, acao){ if (acao==='0536') return ['V0000N71PEN']; const pre = loc==='HULW'?'V0000N71':'V0000N01'; return suf.split('+').map(x=>pre+x); }
+// participação do HULW (PI V0000N71PEN) nos pagamentos SIAFI de inativos/pensionistas, por natureza de 6 dígitos — usada para ratear o que os blocos de UORG do HULW não contêm
+function hulwShareSiafi(){
+  const pm = DATA.pormes; const out = {}; if (!pm || !pm.rows) return out;
+  const mi = pm.meses.length-1; const acc = {};
+  pm.rows.forEach(r=>{ if (r.pi!=='V0000N71PEN' && r.pi!=='V0000N01PEN') return; const k = r.nd.slice(0,6); const o = acc[k]=acc[k]||{h:[0,0],u:[0,0]}; const t = r.pi==='V0000N71PEN'?o.h:o.u; t[0]+=r.p34[mi]||0; t[1]+=r.p34[mi-1]||0; });
+  Object.entries(acc).forEach(([k,o])=>{ const i = (o.h[0]+o.u[0])>0.005 ? 0 : 1; const tot = o.h[i]+o.u[i]; if (tot>0.005) out[k] = {share:o.h[i]/tot, h:o.h[i], u:o.u[i], mes:pm.meses[mi-i]}; });
+  return out;
+}
 function outRows(){
-  const est = $('o-est').checked; const rows = [];
+  const est = $('o-est').checked, rat = $('o-rat') ? $('o-rat').checked : true; const rows = []; const HS = rat ? hulwShareSiafi() : {};
+  const shareFor = (nd, a) => (a==='0181'||a==='0536') && HS[nd.slice(0,6)] ? HS[nd.slice(0,6)].share : null;
   // folha de outubro por NDD e localizador
-  Object.entries(FO.ndd).forEach(([nd,d])=>{ const m = mapNDD(nd);
-    [['UFPB',d.ur-d.ua,d.ur,d.ua],['HULW',d.hr-d.ha,d.hr,d.ha]].forEach(([loc,liq,br,an])=>{ if (Math.abs(br)+Math.abs(an)<0.005) return; rows.push({nd,nome:d.nome,loc,folha:liq,bruto:br,anul:an,tot:d.tr,hulw:d.hr,a:m.a,pis:m.pi?piFor(loc,m.pi,m.a):[],est:false}); }); });
+  Object.entries(FO.ndd).forEach(([nd,d])=>{ const m = mapNDD(nd); const sh = shareFor(nd, m.a);
+    let hr = d.hr, ha = d.ha, rateio = false; if (sh!=null){ hr = d.tr*sh; ha = d.ta*sh; rateio = true; }
+    const ur = d.tr-hr, ua = d.ta-ha;
+    [['UFPB',ur-ua,ur,ua],['HULW',hr-ha,hr,ha]].forEach(([loc,liq,br,an])=>{ if (Math.abs(br)+Math.abs(an)<0.005) return; rows.push({nd,nome:d.nome,loc,folha:liq,bruto:br,anul:an,tot:d.tr,hulw:hr,hulwRel:d.hr,rateio,a:m.a,pis:m.pi?piFor(loc,m.pi,m.a):[],est:false}); }); });
   if (est){ // pensionistas (= setembro no DDP, UFPB) e patronal (= 22% da base PSS: 2 × contribuição do servidor ativo em setembro)
     const pens = REND.filter(r=>r.v==='Pensionista'); const byNd = {}; pens.forEach(r=>{ const k = r.c.replace(/\./g,'').slice(1); byNd[k]=(byNd[k]||0)+r.R[8]; });
-    Object.entries(byNd).forEach(([nd,v])=>{ if (v<0.005) return; const m = mapNDD(nd); rows.push({nd,nome:'(pensionistas, estimado = set/2026 DDP) '+nd,loc:'UFPB',folha:v,bruto:v,anul:0,tot:v,hulw:0,a:m.a,pis:m.pi?piFor('UFPB',m.pi,m.a):[],est:true}); });
+    Object.entries(byNd).forEach(([nd,v])=>{ if (v<0.005) return; const m = mapNDD(nd); const sh = shareFor(nd, m.a) || 0; const hv = v*sh;
+      if (v-hv>0.005) rows.push({nd,nome:'(pensionistas, estimado = set/2026 DDP) '+nd,loc:'UFPB',folha:v-hv,bruto:v-hv,anul:0,tot:v,hulw:hv,hulwRel:0,rateio:sh>0,a:m.a,pis:m.pi?piFor('UFPB',m.pi,m.a):[],est:true});
+      if (hv>0.005) rows.push({nd,nome:'(pensionistas, estimado = set/2026 DDP, parte do HULW rateada pelo SIAFI) '+nd,loc:'HULW',folha:hv,bruto:hv,anul:0,tot:v,hulw:hv,hulwRel:0,rateio:true,a:m.a,pis:m.pi?piFor('HULW',m.pi,m.a):[],est:true}); });
     const pss = sum(DESC.filter(r=>r.r==='98002').map(r=>r.D[8])); const patr = pss*2; const hShare = 16.459/(156.619+16.459);
     rows.push({nd:'31911303',nome:'(patronal RPPS, estimado = 2 × PSS do servidor de setembro) CONTRIBUICAO PATRONAL PARA O RPPS',loc:'UFPB',folha:patr*(1-hShare),bruto:patr*(1-hShare),anul:0,tot:patr,hulw:patr*hShare,a:'09HB',pis:['V0000N01PJN'],est:true});
     rows.push({nd:'31911303',nome:'(patronal RPPS, estimado) CONTRIBUICAO PATRONAL PARA O RPPS',loc:'HULW',folha:patr*hShare,bruto:patr*hShare,anul:0,tot:patr,hulw:patr*hShare,a:'09HB',pis:['V0000N71P2N'],est:true});
@@ -1013,7 +1027,8 @@ function outRows(){
 }
 function renderOut(){
   const {rows, cell} = outRows(); const fil = $('o-fil').value;
-  const T = Object.values(FO.ndd); const tb = sum(T.map(d=>d.tr)), ta = sum(T.map(d=>d.ta)), hb = sum(T.map(d=>d.hr)), ha = sum(T.map(d=>d.ha));
+  const REP = rows.filter(r=>!r.est); const tb = sum(REP.map(r=>r.bruto)), ta = sum(REP.map(r=>r.anul)), hb = sum(REP.filter(r=>r.loc==='HULW').map(r=>r.bruto)), ha = sum(REP.filter(r=>r.loc==='HULW').map(r=>r.anul));
+  const hbRel = sum(Object.values(FO.ndd).map(d=>d.hr)), hRat = hb-hbRel, ratOn = $('o-rat') && $('o-rat').checked;
   const setServ = sum(monthly(REND.filter(r=>r.v!=='Pensionista' && r.a!=='OCC')).slice(8,9)) + sum(monthly(REND.filter(r=>r.v!=='Pensionista' && r.a==='OCC')).slice(8,9));
   const dT = FO.desc.total.TOTAL||0, dH = FO.desc.hulw.TOTAL||0;
   const negL = rows.filter(r=>r.ref>0.005 && r.a!=='OCC'), semC = rows.filter(r=>r.status==='sem crédito' || r.status==='sem célula');
@@ -1025,10 +1040,10 @@ function renderOut(){
   function buildBlocks(loc){
     const bm = new Map();
     rows.filter(r=>r.loc===loc).forEach(r=>{ const nd6 = r.nd.slice(0,6); const k = r.a+'|'+nd6+'|'+r.pis.join('+'); const b = bm.get(k)||{a:r.a,nd6,pis:r.pis,loc,bruto:0,anul:0,folha:0,subAliq:0,subRef:0,est:false,nome:(ND_NOME[nd6]||nd6).replace(/^\S+\s/,''),cellExists:r.cellExists,celKey:r.celKey,cdisp:r.cdisp,caliq:r.caliq,cfolha:r.cfolha,csaldo:r.csaldo,ndds:[]};
-      b.bruto+=r.bruto; b.anul+=r.anul; b.folha+=r.folha; b.tot=(b.tot||0)+(r.tot||0); b.hulw=(b.hulw||0)+(r.hulw||0); if (!r.est){ b.brutoR=(b.brutoR||0)+r.bruto; b.anulR=(b.anulR||0)+r.anul; b.folhaR=(b.folhaR||0)+r.folha; b.totR=(b.totR||0)+(r.tot||0); b.hulwR=(b.hulwR||0)+(r.hulw||0); } b.subAliq+=r.aliq; b.subRef+=r.ref; b.est=b.est||r.est; b.ndds.push(r.nd); (b.subs=b.subs||[]).push(r); bm.set(k,b); });
+      b.bruto+=r.bruto; b.anul+=r.anul; b.folha+=r.folha; b.tot=(b.tot||0)+(r.tot||0); b.hulw=(b.hulw||0)+(r.hulw||0); b.hulwRel=(b.hulwRel||0)+(r.hulwRel||0); if (!r.est){ b.brutoR=(b.brutoR||0)+r.bruto; b.anulR=(b.anulR||0)+r.anul; b.folhaR=(b.folhaR||0)+r.folha; b.totR=(b.totR||0)+(r.tot||0); b.hulwR=(b.hulwR||0)+(r.hulw||0); } b.subAliq+=r.aliq; b.subRef+=r.ref; b.est=b.est||r.est; b.rateio=b.rateio||r.rateio; b.ndds.push(r.nd); (b.subs=b.subs||[]).push(r); bm.set(k,b); });
     const blocks = [...bm.values()];
     blocks.forEach(b=>{
-      b.nes = b.pis.flatMap(pi=>Object.values(neBy[pi+'|'+b.nd6]||{})).sort((x,y)=>y.aliq-x.aliq);
+      b.nes = b.pis.flatMap(pi=>Object.values(neBy[pi+'|'+b.nd6]||{})).map(n=>({...n})).sort((x,y)=>y.aliq-x.aliq); // cópia por bloco (UFPB e HULW podem partilhar a NE na 0536)
       b.emp = sum(b.nes.map(n=>n.emp)); b.aliq = b.cellExists ? b.caliq : 0; // a liquidar de toda a natureza (todos os subitens), igual à soma das NEs
       b.saldo = b.aliq-b.folha; b.ref = b.a==='OCC' ? 0 : Math.max(0,-b.saldo); b.adj = b.a==='OCC' ? 0 : Math.max(0,b.subRef-b.ref); b.ndds = [...new Set(b.ndds)]; b.ptres = [...new Set(b.celKey.map(k=>cell[k]&&cell[k].ptres).filter(Boolean))].join('/');
       let rest = b.folha; b.nes.forEach((n,i)=>{ const last = i===b.nes.length-1; const use = last? rest : Math.min(rest,Math.max(0,n.aliq)); rest-=use; n.use=use; NEUSE[n.ne]=(NEUSE[n.ne]||0)+use; }); });
@@ -1042,7 +1057,7 @@ function renderOut(){
   const blNeg = BL.filter(b=>b.ref>0.005 && b.a!=='OCC'), blAdj = BL.filter(b=>b.adj>0.005 && b.a!=='OCC'), cellsNeg = BL.filter(b=>b.status==='sem crédito');
   kpi($('kpis-out'),[
     {l:'Folha de outubro (servidores) · bruto',v:kv(tb),s:`a anular ${fmtBRL(ta)} · a apropriar ${fmtBRL(tb-ta)} · ${sgn((tb/setServ-1)*100)}% sobre setembro (DDP)`},
-    {l:'HULW',v:kv(hb),s:`${fmtP(hb/tb*100)} do bruto · a anular ${fmtBRL(ha)} · 21 blocos de UORG`},
+    {l:'HULW'+(ratOn?' (UORGs + inativos rateados)':''),v:kv(hb),s:ratOn?`${fmtP(hb/tb*100)} do bruto · ${fmtBRL(hbRel)} nos 21 blocos de UORG + ${fmtBRL(hRat)} de inativos/pensionistas do HULW rateados pela proporção do SIAFI (PI V0000N71PEN)`:`${fmtP(hb/tb*100)} do bruto · a anular ${fmtBRL(ha)} · 21 blocos de UORG (sem aposentados)`},
     {l:'UFPB (total − HULW)',v:kv(tb-hb),s:`a anular ${fmtBRL(ta-ha)} · a apropriar ${fmtBRL(tb-hb-(ta-ha))}`},
     {l:'Descontos · líquido a pagar',v:kv(dT),s:`líquido ${fmtBRL(tb-ta-dT)} · HULW descontos ${fmtBRL(dH)}`},
     {l:'Naturezas com empenho insuficiente',v:blNeg.length+' de '+BL.filter(b=>b.a!=='OCC').length,cls:blNeg.length?'alert':'ok',s:`reforço de NE ${fmtBRL(sum(blNeg.map(b=>b.ref)))} · ajuste entre subitens em ${blAdj.length} naturezas (${fmtBRL(sum(blAdj.map(b=>b.adj)))})`},
@@ -1051,11 +1066,11 @@ function renderOut(){
   // quadro com células mescladas: cada natureza é um bloco (linhas = notas de empenho); as colunas da natureza e do crédito ocupam o bloco inteiro
   const TT = (f)=>(bs,m)=>fmtBRL(sum(bs.map(b=>m?(b[f+'R']||0):(b[f]||0))));
   const MC = (loc)=>[
-    {g:'Folha de outubro'+(loc==='UFPB'?' — UFPB = total do relatório − HULW':' — HULW'), sp:1, h:'Natureza de despesa', k:'nd6', l:1, f:b=>`<b>${esc(b.nd6)}</b> ${esc(b.nome)}<br><span class="small muted">subitens ${esc(b.ndds.map(x=>x.slice(6)).join(', '))}${b.est?' · <span class="pill warn">inclui estimativa</span>':''}</span>`},
+    {g:'Folha de outubro'+(loc==='UFPB'?' — UFPB = total do relatório − HULW':' — HULW'), sp:1, h:'Natureza de despesa', k:'nd6', l:1, f:b=>`<b>${esc(b.nd6)}</b> ${esc(b.nome)}<br><span class="small muted">subitens ${esc(b.ndds.map(x=>x.slice(6)).join(', '))}${b.est?' · <span class="pill warn">inclui estimativa</span>':''}${b.rateio?' · <span class="pill warn">HULW rateado pelo SIAFI</span>':''}</span>`},
     {sp:1, h:'Ação · PI', f:b=>`<span class="small">${esc(b.a+(b.pis.length?' · '+b.pis.map(p=>p.replace('V0000','')).join('/'):''))}</span>`},
     ...(loc==='UFPB' ? [
       {sp:1, h:'Bruto total (relatório)', f:b=>`<span class="muted">${fmtBRL(b.tot)}</span>`, t:TT('tot')},
-      {sp:1, h:'(−) HULW', f:b=>`<span class="muted">${b.hulw>0.005?'− '+fmtBRL(b.hulw):'—'}</span>`, t:(bs,m)=>'− '+fmtBRL(sum(bs.map(b=>m?(b.hulwR||0):(b.hulw||0))))},
+      {sp:1, h:'(−) HULW', f:b=>`<span class="muted">${b.hulw>0.005?'− '+fmtBRL(b.hulw):'—'}${b.rateio?'<br><span class="small">rateado (UORGs: '+fmtBRL(b.hulwRel||0)+')</span>':''}</span>`, t:(bs,m)=>'− '+fmtBRL(sum(bs.map(b=>m?(b.hulwR||0):(b.hulw||0))))},
       {sp:1, h:'= Bruto UFPB', f:b=>fmtBRL(b.bruto), t:TT('bruto')}
     ] : [
       {sp:1, h:'Bruto HULW', f:b=>fmtBRL(b.bruto), t:TT('bruto')}
@@ -1089,7 +1104,7 @@ function renderOut(){
         const st = b.a==='OCC' ? 'custeio' : !b.cellExists ? 'sem célula' : (r.saldo>=-0.005 ? 'coberto' : (nes.length? 'falta saldo no subitem' : 'subitem não empenhado'));
         list.forEach((x,i)=>{ const last = i===list.length-1; const use = x ? (last? rest : Math.min(rest,Math.max(0,x.aliq))) : r.folha; if (x) rest -= use;
           t += '<tr>';
-          if (i===0) t += `<td rowspan="${list.length}" class="sp l"><b>${esc(r.nd)}</b> <span class="small muted">${esc((r.nome||'').replace(/^\(.*?\)\s*/,''))}${r.est?' · <span class="pill warn">estimado</span>':''}</span></td>`+(b.loc==='UFPB'?`<td rowspan="${list.length}" class="sp muted">${fmtBRL(r.tot||0)}</td><td rowspan="${list.length}" class="sp muted">${r.hulw>0.005?'− '+fmtBRL(r.hulw):'—'}</td>`:'')+`<td rowspan="${list.length}" class="sp">${fmtBRL(r.bruto)}</td><td rowspan="${list.length}" class="sp">${r.anul?fmtBRL(r.anul):'—'}</td><td rowspan="${list.length}" class="sp"><b>${fmtBRL(r.folha)}</b></td>`;
+          if (i===0) t += `<td rowspan="${list.length}" class="sp l"><b>${esc(r.nd)}</b> <span class="small muted">${esc((r.nome||'').replace(/^\(.*?\)\s*/,''))}${r.est?' · <span class="pill warn">estimado</span>':''}</span></td>`+(b.loc==='UFPB'?`<td rowspan="${list.length}" class="sp muted">${fmtBRL(r.tot||0)}</td><td rowspan="${list.length}" class="sp muted">${r.hulw>0.005?'− '+fmtBRL(r.hulw):'—'}${r.rateio?' <span class="small">(rateado)</span>':''}</td>`:'')+`<td rowspan="${list.length}" class="sp">${fmtBRL(r.bruto)}</td><td rowspan="${list.length}" class="sp">${r.anul?fmtBRL(r.anul):'—'}</td><td rowspan="${list.length}" class="sp"><b>${fmtBRL(r.folha)}</b></td>`;
           t += x ? `<td class="ne l"><span style="font-family:var(--font-mono)">${esc(x.ne.slice(-12))}</span> <span class="small muted">${esc(x.pi.replace('V0000',''))} · fonte ${esc(x.fonte)}</span></td><td class="ne">${fmtBRL(x.emp)}</td><td class="ne">${fmtBRL(x.aliq)}</td><td class="ne">${use>0.005?fmtBRL(use):'<span class="muted">—</span>'}</td><td class="ne ${cls(x.aliq-use)}">${tvs(x.aliq-use)}</td>`
                  : `<td class="ne l"><span class="muted small">${b.a==='OCC'?'custeio (OCC)':!b.cellExists?'sem PI/natureza aberta':'nenhuma NE traz este subitem'}</span></td><td class="ne">${b.cellExists?fmtBRL(0):'—'}</td><td class="ne">${b.cellExists?fmtBRL(0):'—'}</td><td class="ne">${b.cellExists?fmtBRL(r.folha):'—'}</td><td class="ne ${b.cellExists?cls(-r.folha):''}">${b.cellExists?tvs(-r.folha):'—'}</td>`;
           if (i===0) t += `<td rowspan="${list.length}" class="sp ${b.cellExists?cls(r.saldo):''}">${b.cellExists?tvs(r.saldo):'—'}</td><td rowspan="${list.length}" class="sp"><span class="pill ${SP[st]||''}">${st}</span></td>`;
@@ -1103,7 +1118,8 @@ function renderOut(){
         h += '</tr>'; nrows++; });
       if (showSub && b.subs && b.subs.length){ const st = subTable(b); h += `<tr class="subs ${bi%2?'alt':''}"><td colspan="${cols.length}"><div class="subwrap"><div class="small muted" style="margin:0 0 4px 2px"><span class="subcap">Subitens de ${esc(b.nd6)} — ${b.subs.length} natureza(s) detalhada(s), cada uma com as notas de empenho que a trazem</span></div>${st.t}</div></td></tr>`; nrows += st.n; } });
     const hasEst = base.some(b=>b.est);
-    if (hasEst) h += '<tr class="tot">'+cols.map((c,i)=> i===0 ? `<td class="l">Total ${esc(loc)} — relatório GRCOFINDDP (servidores)</td>` : `<td>${c.t? c.t(base,true) : ''}</td>`).join('')+'</tr>';
+    const ratOn2 = $('o-rat') && $('o-rat').checked;
+    if (hasEst) h += '<tr class="tot">'+cols.map((c,i)=> i===0 ? `<td class="l">Total ${esc(loc)} — servidores do relatório GRCOFINDDP${ratOn2?' (inativos do HULW rateados pelo SIAFI)':''}</td>` : `<td>${c.t? c.t(base,true) : ''}</td>`).join('')+'</tr>';
     h += '<tr class="tot">'+cols.map((c,i)=> i===0 ? `<td class="l">Total ${esc(loc)}${hasEst?(loc==='UFPB'?' com estimativas (pensionistas e patronal)':' com estimativa (patronal)'):''}</td>` : `<td>${c.t? c.t(base,false) : ''}</td>`).join('')+'</tr>';
     h += '</tbody></table>'; el.innerHTML = h; el.classList.toggle('tall', nrows>18);
   }
@@ -1126,6 +1142,7 @@ function renderOut(){
   const bigRef = negL.slice().sort((x,y)=>y.ref-x.ref).slice(0,4);
   const notes = [
     {c:cellsNeg.length?'crit':'good',b:cellsNeg.length?'Células que não cobrem outubro nem com todo o disponível':'Todas as células cobrem a folha de outubro', p:cellsNeg.length? cellsNeg.map(b=>`${b.loc} · PTRES ${b.ptres} · ${b.pis.map(p=>p.replace('V0000','')).join('/')} · ${b.nd6}: folha ${fmtBRL(b.folha)}, a liquidar ${fmtBRL(b.aliq)}, disponível ${fmtBRL(b.cdisp)}, falta ${fmtBRL(-b.csaldoRef)}`).join('; ')+'. Para apropriar outubro nessas células é preciso detalhar crédito (aba Crédito e detalhamento) ou receber crédito suplementar antes do reforço de empenho.' : 'O empenhado a liquidar mais o disponível de cada célula é suficiente para apropriar a folha de outubro; o que falta aparece como reforço de empenho dentro da própria célula.'},
+    {c:ratOn?'':'warn',b:'Aposentados e pensionistas do HULW não estão nos blocos de UORG do HULW', p:`Os 21 blocos de UORG do HULW no GRCOFINDDP trazem só ativos e contratos: de 31.90.01 (aposentadorias) aparecem ${fmtBRL(sum(Object.entries(FO.ndd).filter(([k])=>k.startsWith('319001')).map(([,d])=>d.hr)))} e de 31.90.03 (pensões) nada, enquanto o SIAFI paga pelo PI V0000N71PEN cerca de ${fmtBRL(sum(Object.values(hulwShareSiafi()).map(o=>o.h)))} por mês de inativos e pensionistas do hospital (folha de setembro paga em outubro). Sem correção, esse valor ficaria dentro da "UFPB" e o quadro do HULW subestimaria a ação 0181. ${ratOn?'Com a opção "ratear inativos do HULW" marcada, a parte do HULW em cada natureza da 0181 (e na 0536) é estimada pela proporção V0000N71PEN ÷ (V0000N71PEN + V0000N01PEN) dos pagamentos SIAFI do mês, natureza a natureza, e a UFPB fica com o restante — o total do relatório não muda; as linhas rateadas estão marcadas.':'Marque "ratear inativos do HULW" para estimar essa parte pela proporção do SIAFI.'}`},
     {c:'warn',b:'Onde o empenho a liquidar não chega para outubro', p:`No nível da célula (natureza de 6 dígitos), ${BL.filter(b=>b.ref>0.005&&b.a!=='OCC').length} naturezas precisam de reforço de empenho antes da apropriação, somando ${fmtBRL(sum(BL.filter(b=>b.a!=='OCC').map(b=>b.ref)))}; dentro das NEs, ${negL.length} subitens estão sem saldo (${fmtBRL(sum(negL.map(r=>r.ref)))}), parte resolvida por ajuste entre subitens da mesma NE. Maiores subitens: ${bigRef.map(r=>r.loc+' '+r.nd+' '+fmtBRL(r.ref)).join('; ')}. O reforço consome o disponível da célula; quando a célula não tem disponível mas tem saldo a liquidar em outra natureza, o caminho é anular esse saldo e reforçar a natureza em falta (ajuste entre subelementos do mesmo empenho).`},
     {c:'',b:'O que o relatório de outubro não contém', p:`Pensionistas (31.90.03) e a contribuição patronal (31.91.13) não aparecem no GRCOFINDDP de servidores; ${$('o-est').checked?'estão estimados (pensionistas = setembro no DDP; patronal = 2 × PSS do servidor de setembro) e marcados como tal':'foram deixados de fora'}. Aposentados lotados no HULW (R$ 7,5 mi/mês no DDP) não estão nos blocos de UORG do HULW, que trazem só R$ 36 mil de proventos: por isso o "HULW" desta aba é a folha de ativos e contratos das UORGs do hospital, e a parcela de aposentados do HULW fica dentro de "UFPB". Para fechar com o SIAFI por PI, seria preciso o GRCOFINDDP de pensionistas e o DDP de aposentados por UORG.`},
     {c:'warn',b:'Exercícios anteriores de ativos: o salto de outubro muda o plano de crédito', p:`A natureza 31.90.92.11 (UFPB) traz ${fmtBRL((FO.ndd['31909211']||{tr:0}).ur)} em outubro, sem saldo a liquidar e com só ${fmtBRL((cell['V0000N01P2N|319092']||{disp:0}).disp)} disponíveis na célula 169720 · 319092: faltam ${fmtBRL(Math.max(0,-((cell['V0000N01P2N|319092']||{aliq:0,disp:0,folha:0}).aliq+(cell['V0000N01P2N|319092']||{disp:0}).disp-(cell['V0000N01P2N|319092']||{folha:0}).folha)))} antes mesmo de novembro. A aba Crédito e detalhamento, que projeta outubro pela média de jan–set, propõe retirar sobra dessa natureza; com a folha real, o movimento correto é o inverso: levar crédito para 319092 (por exemplo, da sobra de 31.90.04 no mesmo PTRES, via QDD) e manter o pedido de suplementação da 20TP acrescido desse valor.`},
@@ -1211,7 +1228,7 @@ function boot(){
   $('b-real').addEventListener('click',()=>{REAL=true;$('b-nom').setAttribute('aria-pressed','false');$('b-real').setAttribute('aria-pressed','true');renderHist();});
   ['p-g','p-fn20','p-fd20','p-fn01','p-fn09','p-r26','p-veg','p-r27'].forEach(id=>$(id).addEventListener('input',()=>{renderProj();renderHist();renderMes();renderCred();}));
   ['p-indisp','p-m27'].forEach(id=>$(id).addEventListener('change',()=>{renderProj();renderHist();renderMes();renderCred();}));
-  $('c-marg').addEventListener('input',renderCred); ['o-fil','o-est','o-sub','o-n','ne-acao','ne-loc'].forEach(id=>$(id).addEventListener('change',renderOut)); $('o-q').addEventListener('input',renderOutRub); ['c-qdd','c-cross','c-ptres'].forEach(id=>$(id).addEventListener('change',renderCred));
+  $('c-marg').addEventListener('input',renderCred); ['o-fil','o-est','o-rat','o-sub','o-n','ne-acao','ne-loc'].forEach(id=>$(id).addEventListener('change',renderOut)); $('o-q').addEventListener('input',renderOutRub); ['c-qdd','c-cross','c-ptres'].forEach(id=>$(id).addEventListener('change',renderCred));
   $('b-exact').addEventListener('click',()=>setFmt(true)); $('b-mi').addEventListener('click',()=>setFmt(false)); document.body.classList.toggle('exact',EXACT); $('b-exact').setAttribute('aria-pressed',EXACT?'true':'false'); $('b-mi').setAttribute('aria-pressed',EXACT?'false':'true');
   $('p-reset').addEventListener('click',()=>{ $('p-g').value=DEF.g; $('p-fn20').value=DEF.fn20; $('p-fd20').value=DEF.fd20; $('p-fn01').value=DEF.fn01; $('p-fn09').value=DEF.fn09; $('p-indisp').checked=false; $('p-r26').value=5; $('p-veg').value=3; $('p-r27').value=0; $('p-m27').value='5'; renderProj(); renderHist(); });
 }
