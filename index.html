@@ -330,7 +330,7 @@ body.exact .kpi .val{font-size:1.12rem;letter-spacing:-.01em}
     <label class="ctrl" style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" id="o-sub" checked> Mostrar subitens (natureza detalhada × NE) dentro de cada natureza</label>
     <label class="ctrl" style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" id="o-est" checked> Incluir estimativas para o que o relatório não traz (pensionistas = setembro no DDP; patronal = 22% da base PSS)</label>
   </div>
-  <div class="card"><h3>UFPB — folha de outubro × notas de empenho (planos internos V0000N01…)</h3><div class="note">Cada bloco é uma natureza de 6 dígitos (a célula em que o SIAFI controla crédito e empenho), com folha = bruto − a anular = valor a apropriar; as linhas do bloco são as notas de empenho dessa natureza, com empenhado, a liquidar e a parte de outubro atribuída a cada uma. "Saldo após outubro" = a liquidar da natureza − folha; quando negativo, é o reforço de empenho necessário, que consome o crédito disponível da célula (PTRES × natureza).</div><div class="tbl-wrap" id="t-out-ufpb"></div></div>
+  <div class="card"><h3>UFPB — folha de outubro × notas de empenho (planos internos V0000N01…)</h3><div class="note"><b>UFPB = bruto total do relatório GRCOFINDDP − HULW</b>, natureza a natureza e subitem a subitem (as três colunas iniciais mostram a conta). Cada bloco é uma natureza de 6 dígitos (a célula em que o SIAFI controla crédito e empenho), com folha = bruto − a anular = valor a apropriar; as linhas do bloco são as notas de empenho dessa natureza, com empenhado, a liquidar e a parte de outubro atribuída a cada uma. "Saldo após outubro" = a liquidar da natureza − folha; quando negativo, é o reforço de empenho necessário, que consome o crédito disponível da célula (PTRES × natureza).</div><div class="tbl-wrap" id="t-out-ufpb"></div></div>
   <div class="card" style="margin-top:14px"><h3>HULW — folha de outubro × notas de empenho (planos internos V0000N71…)</h3><div class="note">Folha das UORGs do HULW (ativos e contratos; os aposentados lotados no HULW não constam dos blocos e ficam no quadro da UFPB). Mesma leitura do quadro acima.</div><div class="tbl-wrap" id="t-out-hulw"></div></div>
   <div class="card" style="margin-top:14px"><h3>Notas de empenho das ações de pessoal — posição 28/10/2026</h3><div class="note">81 notas de empenho, com empenhado, a liquidar e o que a folha de outubro consome de cada uma (atribuída à NE com maior saldo na natureza, na ordem em que o SIAFI liquida). Fonte: Tesouro Gerencial, empenhos por NE e natureza detalhada.</div><div class="ctrls"><label class="ctrl">Ação<select id="ne-acao"><option value="">Todas</option><option>20TP</option><option>0181</option><option>09HB</option><option>212B</option><option>2004</option><option>0536</option></select></label><label class="ctrl">Localizador<select id="ne-loc"><option value="">UFPB e HULW</option><option value="UFPB">UFPB</option><option value="HULW">HULW</option></select></label></div><div class="tbl-wrap" id="t-ne"></div></div>
   <div class="grid g2" style="margin-top:14px">
@@ -994,13 +994,13 @@ function outRows(){
   const est = $('o-est').checked; const rows = [];
   // folha de outubro por NDD e localizador
   Object.entries(FO.ndd).forEach(([nd,d])=>{ const m = mapNDD(nd);
-    [['UFPB',d.ur-d.ua,d.ur,d.ua],['HULW',d.hr-d.ha,d.hr,d.ha]].forEach(([loc,liq,br,an])=>{ if (Math.abs(br)+Math.abs(an)<0.005) return; rows.push({nd,nome:d.nome,loc,folha:liq,bruto:br,anul:an,a:m.a,pis:m.pi?piFor(loc,m.pi,m.a):[],est:false}); }); });
+    [['UFPB',d.ur-d.ua,d.ur,d.ua],['HULW',d.hr-d.ha,d.hr,d.ha]].forEach(([loc,liq,br,an])=>{ if (Math.abs(br)+Math.abs(an)<0.005) return; rows.push({nd,nome:d.nome,loc,folha:liq,bruto:br,anul:an,tot:d.tr,hulw:d.hr,a:m.a,pis:m.pi?piFor(loc,m.pi,m.a):[],est:false}); }); });
   if (est){ // pensionistas (= setembro no DDP, UFPB) e patronal (= 22% da base PSS: 2 × contribuição do servidor ativo em setembro)
     const pens = REND.filter(r=>r.v==='Pensionista'); const byNd = {}; pens.forEach(r=>{ const k = r.c.replace(/\./g,'').slice(1); byNd[k]=(byNd[k]||0)+r.R[8]; });
-    Object.entries(byNd).forEach(([nd,v])=>{ if (v<0.005) return; const m = mapNDD(nd); rows.push({nd,nome:'(pensionistas, estimado = set/2026 DDP) '+nd,loc:'UFPB',folha:v,bruto:v,anul:0,a:m.a,pis:m.pi?piFor('UFPB',m.pi,m.a):[],est:true}); });
+    Object.entries(byNd).forEach(([nd,v])=>{ if (v<0.005) return; const m = mapNDD(nd); rows.push({nd,nome:'(pensionistas, estimado = set/2026 DDP) '+nd,loc:'UFPB',folha:v,bruto:v,anul:0,tot:v,hulw:0,a:m.a,pis:m.pi?piFor('UFPB',m.pi,m.a):[],est:true}); });
     const pss = sum(DESC.filter(r=>r.r==='98002').map(r=>r.D[8])); const patr = pss*2; const hShare = 16.459/(156.619+16.459);
-    rows.push({nd:'31911303',nome:'(patronal RPPS, estimado = 2 × PSS do servidor de setembro) CONTRIBUICAO PATRONAL PARA O RPPS',loc:'UFPB',folha:patr*(1-hShare),bruto:patr*(1-hShare),anul:0,a:'09HB',pis:['V0000N01PJN'],est:true});
-    rows.push({nd:'31911303',nome:'(patronal RPPS, estimado) CONTRIBUICAO PATRONAL PARA O RPPS',loc:'HULW',folha:patr*hShare,bruto:patr*hShare,anul:0,a:'09HB',pis:['V0000N71P2N'],est:true});
+    rows.push({nd:'31911303',nome:'(patronal RPPS, estimado = 2 × PSS do servidor de setembro) CONTRIBUICAO PATRONAL PARA O RPPS',loc:'UFPB',folha:patr*(1-hShare),bruto:patr*(1-hShare),anul:0,tot:patr,hulw:patr*hShare,a:'09HB',pis:['V0000N01PJN'],est:true});
+    rows.push({nd:'31911303',nome:'(patronal RPPS, estimado) CONTRIBUICAO PATRONAL PARA O RPPS',loc:'HULW',folha:patr*hShare,bruto:patr*hShare,anul:0,tot:patr,hulw:patr*hShare,a:'09HB',pis:['V0000N71P2N'],est:true});
   }
   // empenho a liquidar por NDD × PI, e células ND6 × PI
   const aliqNdd = {}, cell = {};
@@ -1025,7 +1025,7 @@ function renderOut(){
   function buildBlocks(loc){
     const bm = new Map();
     rows.filter(r=>r.loc===loc).forEach(r=>{ const nd6 = r.nd.slice(0,6); const k = r.a+'|'+nd6+'|'+r.pis.join('+'); const b = bm.get(k)||{a:r.a,nd6,pis:r.pis,loc,bruto:0,anul:0,folha:0,subAliq:0,subRef:0,est:false,nome:(ND_NOME[nd6]||nd6).replace(/^\S+\s/,''),cellExists:r.cellExists,celKey:r.celKey,cdisp:r.cdisp,caliq:r.caliq,cfolha:r.cfolha,csaldo:r.csaldo,ndds:[]};
-      b.bruto+=r.bruto; b.anul+=r.anul; b.folha+=r.folha; b.subAliq+=r.aliq; b.subRef+=r.ref; b.est=b.est||r.est; b.ndds.push(r.nd); (b.subs=b.subs||[]).push(r); bm.set(k,b); });
+      b.bruto+=r.bruto; b.anul+=r.anul; b.folha+=r.folha; b.tot=(b.tot||0)+(r.tot||0); b.hulw=(b.hulw||0)+(r.hulw||0); if (!r.est){ b.brutoR=(b.brutoR||0)+r.bruto; b.anulR=(b.anulR||0)+r.anul; b.folhaR=(b.folhaR||0)+r.folha; b.totR=(b.totR||0)+(r.tot||0); b.hulwR=(b.hulwR||0)+(r.hulw||0); } b.subAliq+=r.aliq; b.subRef+=r.ref; b.est=b.est||r.est; b.ndds.push(r.nd); (b.subs=b.subs||[]).push(r); bm.set(k,b); });
     const blocks = [...bm.values()];
     blocks.forEach(b=>{
       b.nes = b.pis.flatMap(pi=>Object.values(neBy[pi+'|'+b.nd6]||{})).sort((x,y)=>y.aliq-x.aliq);
@@ -1049,20 +1049,27 @@ function renderOut(){
     {l:'Naturezas sem crédito para o reforço',v:cellsNeg.length,cls:cellsNeg.length?'alert':'ok',s:cellsNeg.length? cellsNeg.map(b=>b.loc+' '+b.ptres+' '+b.nd6+' '+fmtBRL(b.csaldoRef)).join(' · ') : 'todas as células cobrem outubro'}
   ]);
   // quadro com células mescladas: cada natureza é um bloco (linhas = notas de empenho); as colunas da natureza e do crédito ocupam o bloco inteiro
-  const MC = [
-    {g:'Folha de outubro', sp:1, h:'Natureza de despesa', k:'nd6', l:1, f:b=>`<b>${esc(b.nd6)}</b> ${esc(b.nome)}<br><span class="small muted">subitens ${esc(b.ndds.map(x=>x.slice(6)).join(', '))}${b.est?' · <span class="pill warn">inclui estimativa</span>':''}</span>`},
+  const TT = (f)=>(bs,m)=>fmtBRL(sum(bs.map(b=>m?(b[f+'R']||0):(b[f]||0))));
+  const MC = (loc)=>[
+    {g:'Folha de outubro'+(loc==='UFPB'?' — UFPB = total do relatório − HULW':' — HULW'), sp:1, h:'Natureza de despesa', k:'nd6', l:1, f:b=>`<b>${esc(b.nd6)}</b> ${esc(b.nome)}<br><span class="small muted">subitens ${esc(b.ndds.map(x=>x.slice(6)).join(', '))}${b.est?' · <span class="pill warn">inclui estimativa</span>':''}</span>`},
     {sp:1, h:'Ação · PI', f:b=>`<span class="small">${esc(b.a+(b.pis.length?' · '+b.pis.map(p=>p.replace('V0000','')).join('/'):''))}</span>`},
-    {sp:1, h:'Bruto out', f:b=>fmtBRL(b.bruto), t:bs=>fmtBRL(sum(bs.map(b=>b.bruto)))},
-    {sp:1, h:'A anular', f:b=>b.anul?fmtBRL(b.anul):'—', t:bs=>fmtBRL(sum(bs.map(b=>b.anul)))},
-    {sp:1, h:'Folha a apropriar', f:b=>`<b>${fmtBRL(b.folha)}</b>`, t:bs=>fmtBRL(sum(bs.map(b=>b.folha)))},
+    ...(loc==='UFPB' ? [
+      {sp:1, h:'Bruto total (relatório)', f:b=>`<span class="muted">${fmtBRL(b.tot)}</span>`, t:TT('tot')},
+      {sp:1, h:'(−) HULW', f:b=>`<span class="muted">${b.hulw>0.005?'− '+fmtBRL(b.hulw):'—'}</span>`, t:(bs,m)=>'− '+fmtBRL(sum(bs.map(b=>m?(b.hulwR||0):(b.hulw||0))))},
+      {sp:1, h:'= Bruto UFPB', f:b=>fmtBRL(b.bruto), t:TT('bruto')}
+    ] : [
+      {sp:1, h:'Bruto HULW', f:b=>fmtBRL(b.bruto), t:TT('bruto')}
+    ]),
+    {sp:1, h:'A anular', f:b=>b.anul?fmtBRL(b.anul):'—', t:TT('anul')},
+    {sp:1, h:'Folha a apropriar', f:b=>`<b>${fmtBRL(b.folha)}</b>`, t:TT('folha')},
     {g:'Notas de empenho da natureza', h:'Nota de empenho · fonte', l:1, f:(n,b)=> n ? `<span style="font-family:var(--font-mono)">${esc(n.ne.slice(-12))}</span> <span class="small muted">${esc(n.pi.replace('V0000',''))} · fonte ${esc(n.fonte)}</span>` : `<span class="muted small">${b.a==='OCC'?'custeio (OCC)':!b.cellExists?'sem PI/natureza aberta':'nenhuma NE nesta natureza'}</span>`},
-    {h:'Empenhado', f:(n,b)=> n?fmtBRL(n.emp):(b.cellExists?fmtBRL(0):'—'), t:bs=>fmtBRL(sum(bs.filter(b=>b.cellExists).map(b=>b.emp)))},
-    {h:'A liquidar', f:(n,b)=> n?fmtBRL(n.aliq):(b.cellExists?fmtBRL(0):'—'), t:bs=>fmtBRL(sum(bs.filter(b=>b.cellExists).map(b=>b.aliq)))},
-    {h:'Outubro nesta NE', f:(n,b)=> n ? (n.use>0.005?fmtBRL(n.use):'<span class="muted">—</span>') : (b.cellExists?fmtBRL(b.folha):'—'), t:bs=>fmtBRL(sum(bs.filter(b=>b.cellExists).map(b=>b.folha)))},
-    {h:'Saldo da NE após out', f:(n,b)=> n ? tvs(n.aliq-n.use) : (b.cellExists?tvs(-b.folha):'—'), cls:(n,b)=> n ? cls(n.aliq-n.use) : (b.cellExists?cls(-b.folha):''), t:bs=>tvs(sum(bs.filter(b=>b.cellExists).map(b=>b.saldo)))},
-    {g:'Natureza inteira e crédito da célula', sp:1, h:'Saldo após outubro', f:b=>b.cellExists?tvs(b.saldo):'—', cls:b=>b.cellExists?cls(b.saldo):'', t:bs=>tvs(sum(bs.filter(b=>b.cellExists).map(b=>b.saldo)))},
-    {sp:1, h:'Reforço de NE', f:b=>b.ref>0.005?fmtBRL(b.ref):'—', cls:b=>b.ref>0.005?'neg-v':'', t:bs=>fmtBRL(sum(bs.map(b=>b.ref)))},
-    {sp:1, h:'Ajuste entre subitens', f:b=>b.adj>0.005?fmtBRL(b.adj):'—', t:bs=>fmtBRL(sum(bs.map(b=>b.adj)))},
+    {h:'Empenhado', f:(n,b)=> n?fmtBRL(n.emp):(b.cellExists?fmtBRL(0):'—'), t:(bs,m)=>m?'':fmtBRL(sum(bs.filter(b=>b.cellExists).map(b=>b.emp)))},
+    {h:'A liquidar', f:(n,b)=> n?fmtBRL(n.aliq):(b.cellExists?fmtBRL(0):'—'), t:(bs,m)=>m?'':fmtBRL(sum(bs.filter(b=>b.cellExists).map(b=>b.aliq)))},
+    {h:'Outubro nesta NE', f:(n,b)=> n ? (n.use>0.005?fmtBRL(n.use):'<span class="muted">—</span>') : (b.cellExists?fmtBRL(b.folha):'—'), t:(bs,m)=>m?'':fmtBRL(sum(bs.filter(b=>b.cellExists).map(b=>b.folha)))},
+    {h:'Saldo da NE após out', f:(n,b)=> n ? tvs(n.aliq-n.use) : (b.cellExists?tvs(-b.folha):'—'), cls:(n,b)=> n ? cls(n.aliq-n.use) : (b.cellExists?cls(-b.folha):''), t:(bs,m)=>m?'':tvs(sum(bs.filter(b=>b.cellExists).map(b=>b.saldo)))},
+    {g:'Natureza inteira e crédito da célula', sp:1, h:'Saldo após outubro', f:b=>b.cellExists?tvs(b.saldo):'—', cls:b=>b.cellExists?cls(b.saldo):'', t:(bs,m)=>m?'':tvs(sum(bs.filter(b=>b.cellExists).map(b=>b.saldo)))},
+    {sp:1, h:'Reforço de NE', f:b=>b.ref>0.005?fmtBRL(b.ref):'—', cls:b=>b.ref>0.005?'neg-v':'', t:(bs,m)=>m?'':fmtBRL(sum(bs.map(b=>b.ref)))},
+    {sp:1, h:'Ajuste entre subitens', f:b=>b.adj>0.005?fmtBRL(b.adj):'—', t:(bs,m)=>m?'':fmtBRL(sum(bs.map(b=>b.adj)))},
     {sp:1, h:'Crédito disponível', f:b=>b.cellExists?fmtBRL(b.cdisp):'<span class="muted">—</span>'},
     {sp:1, h:'Crédito após o reforço', f:b=>b.cellExists?tvs(b.csaldoRef):'—', cls:b=>b.cellExists?cls(b.csaldoRef):''},
     {sp:1, h:'Situação', f:b=>`<span class="pill ${PILL[b.status]||''}">${b.status}</span>`}
@@ -1076,13 +1083,13 @@ function renderOut(){
     const showSub = $('o-sub').checked;
     function subTable(b){
       const SP = {'coberto':'ok','falta saldo no subitem':'warn','subitem não empenhado':'crit','custeio':'','sem célula':'crit'};
-      let t = '<table class="subtbl"><thead><tr><th style="text-align:left">Subitem (natureza detalhada)</th><th>Bruto out</th><th>A anular</th><th>Folha a apropriar</th><th class="ne l" style="text-align:left">Nota de empenho · fonte</th><th class="ne">Empenhado no subitem</th><th class="ne">A liquidar no subitem</th><th class="ne">Outubro nesta NE</th><th class="ne">Saldo na NE após out</th><th>Saldo do subitem após out</th><th>Situação</th></tr></thead><tbody>';
+      let t = '<table class="subtbl"><thead><tr><th style="text-align:left">Subitem (natureza detalhada)</th>'+(b.loc==='UFPB'?'<th>Bruto total (relatório)</th><th>(−) HULW</th><th>= Bruto UFPB</th>':'<th>Bruto HULW</th>')+'<th>A anular</th><th>Folha a apropriar</th><th class="ne l" style="text-align:left">Nota de empenho · fonte</th><th class="ne">Empenhado no subitem</th><th class="ne">A liquidar no subitem</th><th class="ne">Outubro nesta NE</th><th class="ne">Saldo na NE após out</th><th>Saldo do subitem após out</th><th>Situação</th></tr></thead><tbody>';
       const subs = b.subs.slice().sort((x,y)=>x.nd.localeCompare(y.nd)); let n = 0;
       subs.forEach(r=>{ const nes = b.pis.flatMap(pi=>neSub[pi+'|'+r.nd]||[]).sort((x,y)=>y.aliq-x.aliq); const list = nes.length? nes : [null]; let rest = r.folha;
         const st = b.a==='OCC' ? 'custeio' : !b.cellExists ? 'sem célula' : (r.saldo>=-0.005 ? 'coberto' : (nes.length? 'falta saldo no subitem' : 'subitem não empenhado'));
         list.forEach((x,i)=>{ const last = i===list.length-1; const use = x ? (last? rest : Math.min(rest,Math.max(0,x.aliq))) : r.folha; if (x) rest -= use;
           t += '<tr>';
-          if (i===0) t += `<td rowspan="${list.length}" class="sp l"><b>${esc(r.nd)}</b> <span class="small muted">${esc((r.nome||'').replace(/^\(.*?\)\s*/,''))}${r.est?' · <span class="pill warn">estimado</span>':''}</span></td><td rowspan="${list.length}" class="sp">${fmtBRL(r.bruto)}</td><td rowspan="${list.length}" class="sp">${r.anul?fmtBRL(r.anul):'—'}</td><td rowspan="${list.length}" class="sp"><b>${fmtBRL(r.folha)}</b></td>`;
+          if (i===0) t += `<td rowspan="${list.length}" class="sp l"><b>${esc(r.nd)}</b> <span class="small muted">${esc((r.nome||'').replace(/^\(.*?\)\s*/,''))}${r.est?' · <span class="pill warn">estimado</span>':''}</span></td>`+(b.loc==='UFPB'?`<td rowspan="${list.length}" class="sp muted">${fmtBRL(r.tot||0)}</td><td rowspan="${list.length}" class="sp muted">${r.hulw>0.005?'− '+fmtBRL(r.hulw):'—'}</td>`:'')+`<td rowspan="${list.length}" class="sp">${fmtBRL(r.bruto)}</td><td rowspan="${list.length}" class="sp">${r.anul?fmtBRL(r.anul):'—'}</td><td rowspan="${list.length}" class="sp"><b>${fmtBRL(r.folha)}</b></td>`;
           t += x ? `<td class="ne l"><span style="font-family:var(--font-mono)">${esc(x.ne.slice(-12))}</span> <span class="small muted">${esc(x.pi.replace('V0000',''))} · fonte ${esc(x.fonte)}</span></td><td class="ne">${fmtBRL(x.emp)}</td><td class="ne">${fmtBRL(x.aliq)}</td><td class="ne">${use>0.005?fmtBRL(use):'<span class="muted">—</span>'}</td><td class="ne ${cls(x.aliq-use)}">${tvs(x.aliq-use)}</td>`
                  : `<td class="ne l"><span class="muted small">${b.a==='OCC'?'custeio (OCC)':!b.cellExists?'sem PI/natureza aberta':'nenhuma NE traz este subitem'}</span></td><td class="ne">${b.cellExists?fmtBRL(0):'—'}</td><td class="ne">${b.cellExists?fmtBRL(0):'—'}</td><td class="ne">${b.cellExists?fmtBRL(r.folha):'—'}</td><td class="ne ${b.cellExists?cls(-r.folha):''}">${b.cellExists?tvs(-r.folha):'—'}</td>`;
           if (i===0) t += `<td rowspan="${list.length}" class="sp ${b.cellExists?cls(r.saldo):''}">${b.cellExists?tvs(r.saldo):'—'}</td><td rowspan="${list.length}" class="sp"><span class="pill ${SP[st]||''}">${st}</span></td>`;
@@ -1095,10 +1102,12 @@ function renderOut(){
           else h += `<td class="ne ${c.l?'l':''} ${c.cls?c.cls(n,b):''}">${c.f(n,b)}</td>`; });
         h += '</tr>'; nrows++; });
       if (showSub && b.subs && b.subs.length){ const st = subTable(b); h += `<tr class="subs ${bi%2?'alt':''}"><td colspan="${cols.length}"><div class="subwrap"><div class="small muted" style="margin:0 0 4px 2px"><span class="subcap">Subitens de ${esc(b.nd6)} — ${b.subs.length} natureza(s) detalhada(s), cada uma com as notas de empenho que a trazem</span></div>${st.t}</div></td></tr>`; nrows += st.n; } });
-    h += '<tr class="tot">'+cols.map((c,i)=> i===0 ? `<td class="l">Total ${esc(loc)}</td>` : `<td>${c.t? c.t(base) : ''}</td>`).join('')+'</tr>';
+    const hasEst = base.some(b=>b.est);
+    if (hasEst) h += '<tr class="tot">'+cols.map((c,i)=> i===0 ? `<td class="l">Total ${esc(loc)} — relatório GRCOFINDDP (servidores)</td>` : `<td>${c.t? c.t(base,true) : ''}</td>`).join('')+'</tr>';
+    h += '<tr class="tot">'+cols.map((c,i)=> i===0 ? `<td class="l">Total ${esc(loc)}${hasEst?(loc==='UFPB'?' com estimativas (pensionistas e patronal)':' com estimativa (patronal)'):''}</td>` : `<td>${c.t? c.t(base,false) : ''}</td>`).join('')+'</tr>';
     h += '</tbody></table>'; el.innerHTML = h; el.classList.toggle('tall', nrows>18);
   }
-  tableMerged($('t-out-ufpb'), MC, BU, 'UFPB'); tableMerged($('t-out-hulw'), MC, BH, 'HULW');
+  tableMerged($('t-out-ufpb'), MC('UFPB'), BU, 'UFPB'); tableMerged($('t-out-hulw'), MC('HULW'), BH, 'HULW');
   $('t-out-hulw').insertAdjacentHTML('beforeend','<p class="small muted" style="margin-top:6px">Uma linha por natureza de despesa de 6 dígitos — a célula em que o SIAFI controla crédito e empenho — somando todos os subitens da folha (listados sob o código). <b>Empenhado</b> e <b>a liquidar</b> são os da natureza inteira (soma das NEs); <b>saldo após outubro</b> = a liquidar − folha a apropriar, negativo quando falta empenho; <b>reforço de NE</b> é esse negativo. <b>Ajuste entre subitens</b>: a natureza tem saldo no conjunto, mas algum subitem da NE não tem — resolve-se remanejando dentro da própria NE, sem crédito novo. <b>Crédito disponível</b> é o não empenhado na célula; <b>crédito após o reforço</b> = disponível − reforço (negativo = a célula não cobre outubro). No meio do quadro, cada linha é uma nota de empenho da natureza, com a parte de outubro atribuída a ela (valor cheio quando há uma só NE) e o saldo que lhe sobra; as colunas da natureza e do crédito são mescladas para o bloco inteiro, porque a célula é uma só. Com "mostrar subitens" marcado, cada bloco termina com o detalhe individualizado por natureza detalhada (8 dígitos): bruto, a anular, folha e, para cada nota de empenho que traz o subitem, o empenhado e o a liquidar naquele subitem, a parte de outubro e o saldo — é aí que se vê qual subitem da NE precisa de remanejamento ou reforço. Situações: <b>coberto</b>; <b>ajuste entre subelementos</b>; <b>reforço com crédito</b>; <b>sem crédito</b>; <b>sem célula</b> (não há PI/natureza aberta para esse localizador); <b>custeio</b> (estagiários/GECC, fora das ações de pessoal).</p>');
   renderNE(NEUSE);
   // células
