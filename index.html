@@ -106,6 +106,16 @@ table.subtbl td.ne.l{white-space:nowrap}
 table.subtbl th:first-child{position:sticky;left:0;z-index:1;background:var(--surface)}
 .subcap{position:sticky;left:14px;display:inline-block}
 tr.lvl2 td:first-child{padding-left:38px;color:var(--fg-2)}
+table.spo thead tr.grp th{top:0;height:26px;padding:4px 8px;line-height:18px;text-align:center;border-bottom:1px solid var(--line);font-size:.68rem;letter-spacing:.06em}
+table.spo thead tr.sub th{top:26px;line-height:1.2}
+table.spo thead tr.grp th:first-child{position:sticky;left:0;z-index:3;text-align:left;vertical-align:middle}
+table.spo>tbody>tr>td:first-child{position:sticky;left:0;z-index:1;background:var(--surface);box-shadow:2px 0 0 var(--surface),3px 0 0 var(--line);min-width:250px;max-width:330px;white-space:normal}
+table.spo>tbody>tr.tot>td:first-child{background:var(--surface-2)}
+table.spo td .cod{font-family:var(--font-mono);font-size:.78rem;margin-right:8px}
+table.spo td .nm{font-size:.78rem;color:var(--fg-2)}
+table.spo td .kd{display:inline-block;margin-left:6px;padding:0 6px;border-radius:999px;font-size:.64rem;border:1px solid var(--line);color:var(--muted);vertical-align:middle}
+table.spo th.proj,table.spo td.proj{background:var(--surface-2)}
+table.spo>tbody>tr.tot>td.proj{background:var(--line-2)}
 .pos-v{color:var(--good-ink)} .neg-v{color:var(--crit-ink)}
 .pill{display:inline-block;padding:1px 8px;border-radius:999px;font-size:.72rem;font-weight:600;border:1px solid var(--line);color:var(--fg-2)}
 .pill.crit{border-color:var(--crit);color:var(--crit-ink)} .pill.ok{border-color:var(--good);color:var(--good-ink)} .pill.warn{border-color:var(--warn);color:var(--fg)}
@@ -370,7 +380,8 @@ body.exact .kpi .val{font-size:1.12rem;letter-spacing:-.01em}
     <label class="ctrl">Unidade gestora<select id="spo-ug"><option value="UFPB">26240 — UFPB</option><option value="HULW">26371 — Hospital Universitário Lauro Wanderley</option></select></label>
     <span class="ctrl"><span>&nbsp;</span><button class="btn" id="spo-export" type="button">⬇ Exportar planilha (modelo SPO, UFPB + HULW)</button></span>
   </div>
-  <div class="card"><h3 id="spo-title">Relatório resumido das despesas de pessoal</h3><div class="note">Os valores de janeiro a outubro são os liquidados no SIAFI por natureza detalhada; novembro e dezembro seguem a projeção da aba Projeções (deriva mensal e fatores sazonais de 13º e férias), rateada à UG pela participação de outubro. Altere os parâmetros na aba Projeções para recalcular esta aba e o arquivo exportado.</div><div class="tbl-wrap tall" id="t-spo"></div></div>
+  <div class="card"><h3>Síntese por bloco — total 2026, dotação e previsão (sobra ou falta)</h3><div class="note">Previsão = dotação atual − total 2026 (executado jan–out + projeção nov–dez). Positivo é sobra, negativo é falta (suplementação necessária), zero quando a dotação é exatamente consumida. Benefícios (2004, 212B, 0536) ficam fora do total de pessoal e encargos, como no modelo.</div><div class="tbl-wrap" id="t-spo-sint"></div></div>
+  <div class="card" style="margin-top:14px"><h3 id="spo-title">Relatório resumido das despesas de pessoal</h3><div class="note">Quadro no formato da planilha exportada: janeiro a outubro são os liquidados no SIAFI por natureza detalhada; novembro e dezembro (fundo destacado) seguem a projeção da aba Projeções (deriva mensal e fatores sazonais de 13º e férias), rateada à UG pela participação de outubro. Linhas marcadas "média" usam a média jan–out; "13º/férias" recebem o excedente sazonal. Altere os parâmetros na aba Projeções para recalcular esta aba e o arquivo exportado.</div><div class="tbl-wrap tall" id="t-spo"></div><div id="spo-notes"></div></div>
 </section>
 
 <!-- ===================== 8. NOTAS ===================== -->
@@ -1312,14 +1323,15 @@ function renderNotes(){
 // ------------------------------------------------------------ tabs & boot
 let CUR = 'visao';
 // ------------------------------------------------------------ 7e. MODELO SPO/MEC (relatório resumido das despesas de pessoal)
-const SPO = DATA.spo || {months:[],rows:[],dot:{},exec25:{},pos:'',pre:''};
+const SPO = DATA.spo || {months:[],rows:[],dot:{},disp:{},aliq:{},exec25:{},pos:'',pre:''};
 const SPO_UG = {UFPB:{code:'26240',nome:'UFPB'}, HULW:{code:'26371',nome:'HOSP. LAURO WANDERLEY-UFPB'}};
 const MESES_PT = ['JANEIRO','FEVEREIRO','MARÇO','ABRIL','MAIO','JUNHO','JULHO','AGOSTO','SETEMBRO','OUTUBRO','NOVEMBRO','DEZEMBRO'];
-const SPO_ND13 = new Set(['31901143','31900413','31900106','31900303']);          // 13º salário
-const SPO_NDFER = new Set(['31901145','31900414','31900107']);                      // férias (1/3, abono)
-const SPO_NONREC = nd => /^3190(91|92)/.test(nd) || /^3390(91|92)/.test(nd);        // sentenças e exercícios anteriores: média do ano
+const SPO_ND13 = new Set(['31901143','31900413','31900106','31900303']);          // 13º salário (ativos, temporários, aposentados, pensionistas)
+const SPO_NDFER = new Set(['31901145','31900414','31900107']);                      // férias (1/3 constitucional e abono)
+const SPO_NONREC = nd => /^3190(91|92)/.test(nd) || /^3390(91|92)/.test(nd);        // sentenças judiciais e despesas de exercícios anteriores: média do ano
 const SPO_BLK = {ATIVO:'ATIVO', INATIVO:'INATIVO', BENESP:'BENEFÍCIO ESPECIAL', PRECAT:'PRECAT E SENT EMP PUBLICA', RPPS:'RPPS - AÇÃO 09HB', SAUDE:'ASSISTENCIA MEDICA E ODONTOLOGICA AOS SERVIDORES CIVIS, EMPR', AUX:'BENEFÍCIOS OBRIGATÓRIOS (212B)', PENSESP:'PENSÕES ESPECIAIS / INDENIZATÓRIAS (0536)'};
 const SPO_BLK_ACAO = {ATIVO:'20TP', INATIVO:'0181', BENESP:'00S6', PRECAT:null, RPPS:'09HB', SAUDE:'2004', AUX:'212B', PENSESP:'0536'};
+const SPO_KIND = {deriva:'deriva mensal', média:'média jan–out', sazonal:'13º/férias (sazonal)'};
 function spoBlockOf(r){ return r.acao==='20TP' ? 'ATIVO' : r.acao==='0181' ? 'INATIVO' : r.acao==='09HB' ? (r.nd.startsWith('319007') ? 'ATIVO' : 'RPPS') : r.acao==='00S6' ? 'BENESP' : r.acao==='2004' ? 'SAUDE' : r.acao==='212B' ? 'AUX' : r.acao==='0536' ? 'PENSESP' : 'AUX'; }
 function spoModel(ug){
   const g = P.g/100; const pr = project(P); const NM = SPO.months.length;   // meses executados (jan–out)
@@ -1334,14 +1346,15 @@ function spoModel(ug){
     if (SPO_ND13.has(o.nd) || SPO_NDFER.has(o.nd)) { o.m[10]=0; o.m[11]=0; o.kind='sazonal'; }
     else if (SPO_NONREC(o.nd)) { o.m[10]=avg; o.m[11]=avg; o.kind='média'; }
     else { o.m[10]=oct*(1+g); o.m[11]=oct*Math.pow(1+g,2); o.kind='deriva'; } });
+  const share = {};
   ACOES_ALL.forEach(a=>{ if (!pr[a]) return; const mine = L.filter(o=>o.acao===a); if (!mine.length) return;
-    const octUg = sum(mine.map(o=>o.m[NM-1])); const octAll = sum(SPO.rows.filter(r=>r.acao===a).map(r=>r.m[NM-1])); const share = octAll>0.005 ? octUg/octAll : 0;
-    [[10,pr[a].nov],[11,pr[a].dez]].forEach(([mi,tot])=>{ const target = tot*share; const reg = mine.filter(o=>o.kind!=='sazonal'); const sumReg = sum(reg.map(o=>o.m[mi])); let extra = target - sumReg;
+    const octUg = sum(mine.map(o=>o.m[NM-1])); const octAll = sum(SPO.rows.filter(r=>r.acao===a).map(r=>r.m[NM-1])); share[a] = octAll>0.005 ? octUg/octAll : 0;
+    [[10,pr[a].nov],[11,pr[a].dez]].forEach(([mi,tot])=>{ const target = tot*share[a]; const reg = mine.filter(o=>o.kind!=='sazonal'); const sumReg = sum(reg.map(o=>o.m[mi])); let extra = target - sumReg;
       if (extra < -0.005){ const f = sumReg>0.005 ? target/sumReg : 0; reg.forEach(o=>o.m[mi]*=f); return; }
       if (a==='09HB'){ const p = mine.find(o=>o.nd==='31911303'); if (p) p.m[mi]+=extra; else if (reg.length) reg.forEach(o=>o.m[mi]+=extra*o.m[NM-1]/Math.max(1e-9,sum(reg.map(x=>x.m[NM-1])))); return; }
       if (a==='20TP' || a==='0181'){
         const d13 = mine.filter(o=>SPO_ND13.has(o.nd)), fer = mine.filter(o=>SPO_NDFER.has(o.nd));
-        const baseOf = o => { const pfx = o.nd.slice(0,6); const b6 = {'31901143':'319011','31900413':'319004','31900106':'319001','31900303':'319003','31901145':'319011','31900414':'319004','31900107':'319001'}[o.nd]||pfx; return sum(mine.filter(x=>x.nd.startsWith(b6) && x.kind==='deriva').map(x=>x.m[NM-1])); };
+        const baseOf = o => { const b6 = {'31901143':'319011','31900413':'319004','31900106':'319001','31900303':'319003','31901145':'319011','31900414':'319004','31900107':'319001'}[o.nd]||o.nd.slice(0,6); return sum(mine.filter(x=>x.nd.startsWith(b6) && x.kind==='deriva').map(x=>x.m[NM-1])); };
         const to13 = (mi===11 && a==='20TP' && fer.length) ? extra*0.6 : extra, toFer = extra - to13;
         const spread = (lst,val)=>{ if (!lst.length || val<=0.005) return val; const w = lst.map(baseOf); const sw = sum(w); lst.forEach((o,i)=>o.m[mi]+= sw>0.005 ? val*w[i]/sw : val/lst.length); return 0; };
         let rest = spread(d13,to13) + spread(fer,toFer);
@@ -1349,48 +1362,67 @@ function spoModel(ug){
         return; }
       if (reg.length) reg.forEach(o=>o.m[mi]+=extra*o.m[NM-1]/Math.max(1e-9,sum(reg.map(x=>x.m[NM-1])))); }); });
   // base PLOA (T) e projetado ano seguinte (S)
-  L.forEach(o=>{ o.tot = sum(o.m); const sazonal = SPO_ND13.has(o.nd)||SPO_NDFER.has(o.nd);
+  L.forEach(o=>{ o.tot = sum(o.m); const sazonal = o.kind==='sazonal';
     o.t = sazonal ? 0 : (o.kind==='média' ? o.m[11] : o.m[NM-1]*Math.pow(1+g,3));
     o.mult = sazonal ? 0 : o.nd==='31911303' ? 13 : (o.blk==='ATIVO'||o.blk==='INATIVO') && o.kind==='deriva' ? 13.3333 : 12;
     o.s = o.t*o.mult; });
   const order = ['ATIVO','INATIVO','BENESP','PRECAT','RPPS','SAUDE','AUX','PENSESP'];
   const blocks = order.map(b=>{ const rows = L.filter(o=>o.blk===b).sort((x,y)=>x.nd.localeCompare(y.nd)||x.nome.localeCompare(y.nome)); const a = SPO_BLK_ACAO[b];
     const dot = a ? ((SPO.dot[ug]||{})[a]||0) : 0, ex25 = a ? ((SPO.exec25[ug]||{})[a]||0) : 0, disp = a ? ((SPO.disp[ug]||{})[a]||0) : 0, aliq = a ? ((SPO.aliq[ug]||{})[a]||0) : 0;
-    const m = Array(12).fill(0); rows.forEach(o=>o.m.forEach((v,i)=>m[i]+=v));
-    return {key:b,title:SPO_BLK[b],acao:a,rows,m,tot:sum(m),dot,ex25,disp,aliq,s:sum(rows.map(o=>o.s)),t:sum(rows.map(o=>o.t))}; });
-  return {ug, blocks, NM, g};
+    const m = Array(12).fill(0); rows.forEach(o=>o.m.forEach((v,i)=>m[i]+=v)); const tot = sum(m);
+    return {key:b,title:SPO_BLK[b],acao:a,rows,m,tot,dot,prev:dot-tot,ex25,disp,aliq,s:sum(rows.map(o=>o.s)),t:sum(rows.map(o=>o.t))}; });
+  return {ug, blocks, NM, g, share, pr};
 }
+function spoAgg(B, keys){ const m = Array(12).fill(0); keys.forEach(k=>B[k].m.forEach((v,i)=>m[i]+=v)); const tot = sum(m), dot = sum(keys.map(k=>B[k].dot)); return {m, tot, dot, prev:dot-tot, ex25:sum(keys.map(k=>B[k].ex25)), s:sum(keys.map(k=>B[k].s)), t:sum(keys.map(k=>B[k].t))}; }
+const SPO_PRIM = ['ATIVO','INATIVO','BENESP','PRECAT'], SPO_FIN = ['RPPS'], SPO_BEN = ['SAUDE','AUX','PENSESP'];
+function spoStatus(prev){ return Math.abs(prev)<0.005 ? {t:'zerado',c:'warn'} : prev<0 ? {t:'falta',c:'crit'} : {t:'sobra',c:'ok'}; }
 function renderSpo(){
-  if (!$('t-spo')) return; const ug = $('spo-ug').value; const M12 = MFULL;
+  if (!$('t-spo')) return; const ug = $('spo-ug').value;
   const R = spoModel(ug); const B = Object.fromEntries(R.blocks.map(b=>[b.key,b])); const NM = R.NM;
-  const prim = ['ATIVO','INATIVO','BENESP','PRECAT'], fin = ['RPPS'];
-  const agg = keys => { const m = Array(12).fill(0); keys.forEach(k=>B[k].m.forEach((v,i)=>m[i]+=v)); return {m, tot:sum(m), dot:sum(keys.map(k=>B[k].dot)), ex25:sum(keys.map(k=>B[k].ex25)), s:sum(keys.map(k=>B[k].s)), t:sum(keys.map(k=>B[k].t))}; };
-  const SP = agg(prim), SF = agg(fin), TT = agg(prim.concat(fin));
+  const SP = spoAgg(B,SPO_PRIM), SF = spoAgg(B,SPO_FIN), TT = spoAgg(B,SPO_PRIM.concat(SPO_FIN)), BN = spoAgg(B,SPO_BEN);
+  $('spo-title').textContent = `Relatório resumido das despesas de pessoal no âmbito da ${SPO_UG[ug].nome} (UG ${SPO_UG[ug].code})`;
   kpi($('kpis-spo'),[
-    {l:`${SPO_UG[ug].nome} · total ${JL} (SIAFI liquidado)`,v:kv(sum(TT.m.slice(0,NM))),s:`pessoal e encargos (20TP, 0181, 00S6, 09HB) · ${SPO.months.length} meses executados`},
-    {l:'Nov–dez projetado',v:kv(TT.m[10]+TT.m[11]),s:`novembro ${fmtRM(TT.m[10])} · dezembro ${fmtRM(TT.m[11])} (projeção da aba Projeções, rateada à UG pela parte de outubro)`},
-    {l:'Total 2026 × dotação',v:kv(TT.tot),s:`dotação atual ${fmtRM(TT.dot)} · ${tvs(TT.dot-TT.tot)} ${TT.dot-TT.tot<0?'(falta)':'(sobra)'}`},
-    {l:'Execução 2025 (empenhado)',v:kv(TT.ex25),s:`2026 ${sgn((TT.tot/TT.ex25-1)*100)}% sobre 2025`},
-    {l:'Base PLOA 2027 (S)',v:kv(TT.s),s:'T × 13,33 (vencimentos e proventos), × 13 (patronal), × 12 (demais); 13º e férias embutidos'}
+    {l:`${SPO_UG[ug].nome} · executado ${JL} (SIAFI liquidado)`,v:kv(sum(TT.m.slice(0,NM))),s:`pessoal e encargos (20TP, 0181, 00S6, 09HB) · ${NM} meses · benefícios (2004, 212B, 0536) à parte: ${fmtRM(sum(BN.m.slice(0,NM)))}`},
+    {l:'Nov–dez projetado',v:kv(TT.m[10]+TT.m[11]),s:`novembro ${fmtRM(TT.m[10])} · dezembro ${fmtRM(TT.m[11])} · projeção da aba Projeções rateada à UG (participação de outubro: 20TP ${nf(1).format((R.share['20TP']||0)*100)}%, 0181 ${nf(1).format((R.share['0181']||0)*100)}%)`},
+    {l:'Previsão: dotação − total 2026',v:`<span class="${TT.prev<-0.005?'neg-v':TT.prev>0.005?'pos-v':''}">${tvs(TT.prev)}</span>`,cls:TT.prev<-0.005?'crit':'ok',s:`total 2026 ${fmtRM(TT.tot)} × dotação atual ${fmtRM(TT.dot)} → ${spoStatus(TT.prev).t}${TT.prev<-0.005?' (suplementação necessária)':''}`},
+    {l:'Execução 2025 (empenhado)',v:kv(TT.ex25),s:`2026 ${sgn((TT.tot/TT.ex25-1)*100)}% sobre 2025 · dotação 2026 ${sgn((TT.dot/TT.ex25-1)*100)}% sobre o empenhado de 2025`},
+    {l:'Base PLOA 2027 (projetado ano seguinte)',v:kv(TT.s),s:`${sgn((TT.s/TT.tot-1)*100)}% sobre o total 2026 · T × 13,33 (vencimentos e proventos), × 13 (patronal), × 12 (demais); 13º e férias embutidos`}
   ]);
-  const f = v => Math.abs(v)<0.005 ? '<span class="muted">—</span>' : fmtBRL(v);
-  const cols = [{h:'',k:'cod',l:1,f:(v,r)=>r.hdr?`<b>${esc(v)}</b>`:`<span class="small" style="font-family:var(--font-mono)">${esc(v)}</span>`},{h:'',k:'nome',l:1,f:(v,r)=>r.hdr?'':`<span class="small">${esc(v)}</span>`}]
-    .concat(M12.map((m,i)=>({h:MESES_PT[i].slice(0,3)+(i>=NM?' (proj)':''),k:'m'+i,f:(v,r)=>r.hdr?`<b>${f(v)}</b>`:f(v),cls:(v,r)=> i>=NM?'muted':''})))
-    .concat([{h:'TOTAL',k:'tot',f:v=>v==null?'':`<b>${f(v)}</b>`},{h:'DOTAÇÃO ATUAL',k:'dot',f:v=>v==null?'':f(v)},{h:'EXEC. ANO ANTERIOR',k:'ex25',f:v=>v==null?'':f(v)},{h:'PROJETADO ANO SEGUINTE',k:'s',f:v=>v==null?'':f(v)},{h:'BASE PLOA ANO SEGUINTE',k:'t',f:v=>v==null?'':f(v)}]);
-  const rows = []; const push = (cod,nome,m,extra={},cls='')=>{ const o = {cod,nome,tot:sum(m),...extra,_cls:cls}; m.forEach((v,i)=>o['m'+i]=v); rows.push(o); };
-  const pushBlock = b => { push(b.title,'',b.m,{hdr:true,dot:b.dot,ex25:b.ex25,s:b.s,t:b.t},'tot'); b.rows.forEach(o=>push(o.nd,o.nome,o.m,{s:o.s,t:o.t})); if (!b.rows.length) push('','(sem execução em 2026)',Array(12).fill(0),{}); };
-  prim.forEach(k=>pushBlock(B[k]));
-  push('SUBTOTAL DESP PRIMÁRIAS','',SP.m,{hdr:true,dot:SP.dot,ex25:SP.ex25,s:SP.s,t:SP.t},'tot');
-  fin.forEach(k=>pushBlock(B[k]));
-  push('SUBTOTAL DESP FINANCEIRAS','',SF.m,{hdr:true,dot:SF.dot,ex25:SF.ex25,s:SF.s,t:SF.t},'tot');
-  push('TOTAL','',TT.m,{hdr:true,dot:TT.dot,ex25:TT.ex25,s:TT.s,t:TT.t},'tot');
-  // saldos acumulados (dotação − execução acumulada)
-  const saldo = (b,lab)=>{ const m=[]; let s=b.dot; b.m.forEach((v,i)=>{ s-=v; m.push(s); }); const o={cod:lab,nome:'',hdr:true,tot:null,_cls:'sub'}; m.forEach((v,i)=>o['m'+i]=v); rows.push(o); return m; };
+  const f = v => v==null ? '' : Math.abs(v)<0.005 ? '<span class="muted">—</span>' : fmtBRL(v);
+  const fs = v => v==null ? '' : `<span class="${v<-0.005?'neg-v':v>0.005?'pos-v':'muted'}">${Math.abs(v)<0.005?'0,00':tvs(v)}</span>`;
+  // ---- síntese por bloco
+  const srow = (lab,b,cls='')=>({lab,acao:b.acao||'',ex:sum(b.m.slice(0,NM)),nd:b.m[10]+b.m[11],tot:b.tot,dot:b.dot,prev:b.prev,st:spoStatus(b.prev),ex25:b.ex25,var:b.ex25>0?(b.tot/b.ex25-1)*100:null,s:b.s,_cls:cls});
+  const srows = [];
+  SPO_PRIM.forEach(k=>srows.push(srow(B[k].title,B[k]))); srows.push(srow('SUBTOTAL DESP PRIMÁRIAS',{...SP,acao:''},'tot'));
+  SPO_FIN.forEach(k=>srows.push(srow(B[k].title,B[k]))); srows.push(srow('SUBTOTAL DESP FINANCEIRAS',{...SF,acao:''},'tot'));
+  srows.push(srow('TOTAL PESSOAL E ENCARGOS',{...TT,acao:''},'tot'));
+  SPO_BEN.forEach(k=>srows.push(srow(B[k].title,B[k],'sub'))); srows.push(srow('TOTAL BENEFÍCIOS',{...BN,acao:''},'tot'));
+  table($('t-spo-sint'),[
+    {h:'Bloco',k:'lab',l:1,f:(v,r)=>r._cls==='tot'?`<b>${esc(v)}</b>`:esc(v)},{h:'Ação',k:'acao'},
+    {h:'Executado '+JL,k:'ex',f:f},{h:'Nov–dez (proj.)',k:'nd',f:f},{h:'Total 2026',k:'tot',f:v=>`<b>${f(v)}</b>`},{h:'Dotação atual',k:'dot',f:f},
+    {h:'Previsão (dotação − total)',k:'prev',f:fs},{h:'Situação',k:'st',f:v=>v?`<span class="pill ${v.c}">${v.t}</span>`:''},
+    {h:'Exec. 2025',k:'ex25',f:f},{h:'2026 × 2025',k:'var',f:v=>v==null?'':sgn(v)+'%'},{h:'Base PLOA 2027',k:'s',f:f}
+  ],srows);
+  // ---- quadro no formato do modelo (cabeçalho em dois níveis, primeira coluna fixa)
+  const rows = []; const push = (cod,nome,m,extra={},cls='')=>{ const o = {cod,nome,m:m.slice(),tot:sum(m),...extra,_cls:cls}; rows.push(o); };
+  const pushBlock = b => { push(b.title,'',b.m,{hdr:true,dot:b.dot,prev:b.prev,ex25:b.ex25,s:b.s,t:b.t},'tot'); b.rows.forEach(o=>push(o.nd,o.nome,o.m,{s:o.s,t:o.t,kind:o.kind,mult:o.mult})); if (!b.rows.length) push('','(sem execução em 2026)',Array(12).fill(0),{empty:true}); };
+  SPO_PRIM.forEach(k=>pushBlock(B[k]));
+  push('SUBTOTAL DESP PRIMÁRIAS','',SP.m,{hdr:true,dot:SP.dot,prev:SP.prev,ex25:SP.ex25,s:SP.s,t:SP.t},'tot');
+  SPO_FIN.forEach(k=>pushBlock(B[k]));
+  push('SUBTOTAL DESP FINANCEIRAS','',SF.m,{hdr:true,dot:SF.dot,prev:SF.prev,ex25:SF.ex25,s:SF.s,t:SF.t},'tot');
+  push('TOTAL','',TT.m,{hdr:true,dot:TT.dot,prev:TT.prev,ex25:TT.ex25,s:TT.s,t:TT.t},'tot');
+  const saldo = (b,lab,cls='sub')=>{ const m=[]; let s=b.dot; b.m.forEach(v=>{ s-=v; m.push(s); }); rows.push({cod:lab,nome:'',hdr:true,saldo:true,m,tot:null,_cls:cls}); return m; };
   const sal = [saldo(B.ATIVO,'SALDO ATIVOS'),saldo(B.INATIVO,'SALDO INATIVOS'),saldo(B.BENESP,'SALDO BENEFÍCIO ESPECIAL'),saldo(B.PRECAT,'SALDO PRECAT E SENT EMP PUBLICA'),saldo(B.RPPS,'SALDO CPSS - AÇÃO 09HB')];
-  { const o={cod:'SALDO TOTAL',nome:'',hdr:true,tot:null,_cls:'tot'}; for(let i=0;i<12;i++) o['m'+i]=sum(sal.map(s=>s[i])); rows.push(o); }
-  ['SAUDE','AUX','PENSESP'].forEach(k=>pushBlock(B[k]));
-  table($('t-spo'),cols,rows);
-  $('t-spo').insertAdjacentHTML('beforeend',`<p class="small muted" style="margin-top:6px">Mesma estrutura do modelo CEAO/CGO/SPO/MEC usado em 2025 (UG ${SPO_UG[ug].code}): linhas = natureza de despesa detalhada; colunas = meses (jan–${SPO.months[NM-1].toLowerCase()} executados no SIAFI; nov–dez projetados), total, dotação atual, execução do ano anterior, projetado e base PLOA do ano seguinte. Fonte dos meses: jan–ago = pagamentos SIAFI por competência da folha (OB, DARF, GRU, NS); setembro = liquidado acumulado jan–set na posição de ${SPO.pre} menos jan–ago; outubro = liquidado na apropriação (posição ${SPO.pos}). A soma jan–out é exatamente o liquidado das ações de pessoal. Nov–dez: linhas regulares pela deriva (${nf(2).format(P.g)}% a.m.); sentenças e exercícios anteriores pela média do ano; 13º e férias recebem o excedente sazonal da projeção por ação (aba Projeções), rateado à UG pela parte de outubro. Dotação e execução anterior por ação da UG (PTRES do localizador). Na 2004, PI PKN = ativos, PWN = inativos. 31.90.07 (Funpresp patronal) fica no bloco ATIVO, como no modelo, embora pertença à 09HB no SIAFI.</p>`);
+  rows.push({cod:'SALDO TOTAL',nome:'',hdr:true,saldo:true,m:Array(12).fill(0).map((_,i)=>sum(sal.map(s=>s[i]))),tot:null,_cls:'tot'});
+  SPO_BEN.forEach(k=>pushBlock(B[k]));
+  push('TOTAL BENEFÍCIOS','',BN.m,{hdr:true,dot:BN.dot,prev:BN.prev,ex25:BN.ex25,s:BN.s,t:BN.t},'tot');
+  let h = `<table class="spo"><thead><tr class="grp"><th rowspan="2">Natureza de despesa</th><th colspan="${NM}">Executado no SIAFI (liquidado)</th><th colspan="${12-NM}">Projeção</th><th colspan="3">Síntese 2026</th><th>Ano anterior</th><th colspan="2">Ano seguinte (PLOA 2027)</th></tr><tr class="sub">`
+    + MFULL.map((m,i)=>`<th class="${i>=NM?'proj':''}">${MESES_PT[i].slice(0,3)}</th>`).join('') + `<th>Total</th><th>Dotação atual</th><th>Previsão<br><span class="muted" style="text-transform:none;letter-spacing:0">dotação − total</span></th><th>Exec. 2025</th><th>Projetado</th><th>Base PLOA</th></tr></thead><tbody>`;
+  rows.forEach(r=>{ const b = r.hdr; const cell = (v,i)=> `<td class="${i>=NM?'proj':''} ${r.saldo?(v<-0.005?'neg-v':''):''}">${b?`<b>${f(v)}</b>`:f(v)}</td>`;
+    const first = b ? `<td><b>${esc(r.cod)}</b></td>` : `<td><span class="cod">${esc(r.cod)}</span><span class="nm">${esc(r.nome)}</span>${r.kind&&r.kind!=='deriva'?`<span class="kd" title="projeção nov–dez: ${SPO_KIND[r.kind]}">${r.kind==='média'?'média':'13º/férias'}</span>`:''}</td>`;
+    h += `<tr class="${r._cls||''}">` + first + r.m.map(cell).join('') + `<td>${r.tot==null?'':`<b>${f(r.tot)}</b>`}</td><td>${b&&!r.saldo?f(r.dot):''}</td><td>${b&&!r.saldo?fs(r.prev):''}</td><td>${b&&!r.saldo?f(r.ex25):''}</td><td>${r.saldo?'':(b?`<b>${f(r.s)}</b>`:(r.mult?f(r.s):''))}</td><td>${r.saldo?'':(b?`<b>${f(r.t)}</b>`:(r.mult?f(r.t):''))}</td></tr>`; });
+  h += '</tbody></table>'; $('t-spo').innerHTML = h;
+  $('spo-notes').innerHTML = `<p class="small muted">Mesma estrutura do modelo CEAO/CGO/SPO/MEC usado em 2025 (UG ${SPO_UG[ug].code}): linhas = natureza de despesa detalhada; colunas = meses (jan–${SPO.months[NM-1].toLowerCase()} executados no SIAFI; nov–dez projetados, em fundo destacado), total, dotação atual, <b>previsão = dotação − total</b> (positivo sobra, negativo falta), execução do ano anterior, projetado e base PLOA do ano seguinte. Fonte dos meses: jan–ago = pagamentos SIAFI por competência da folha (OB, DARF, GRU, NS); setembro = liquidado acumulado jan–set na posição de ${SPO.pre} menos jan–ago; outubro = liquidado na apropriação (posição ${SPO.pos}). A soma jan–out é exatamente o liquidado das ações de pessoal. Nov–dez: linhas regulares pela deriva (${nf(2).format(P.g)}% a.m.); sentenças e exercícios anteriores pela média do ano (marcadas "média"); 13º e férias (marcadas "13º/férias") recebem o excedente sazonal da projeção por ação (aba Projeções), rateado à UG pela parte de outubro. Dotação e execução anterior por ação da UG (PTRES do localizador). Na 2004, PI PKN = ativos, PWN = inativos. 31.90.07 (Funpresp patronal) fica no bloco ATIVO, como no modelo, embora pertença à 09HB no SIAFI. Os saldos acumulam dotação − execução mês a mês, como as fórmulas do modelo.</p>`;
 }
 // ---------- exportação XLSX (sem biblioteca: zip "store" + XML do OOXML)
 function crc32(buf){ let c, crc = 0xFFFFFFFF; for (let n=0;n<buf.length;n++){ c = (crc ^ buf[n]) & 0xFF; for (let k=0;k<8;k++) c = c & 1 ? (c >>> 1) ^ 0xEDB88320 : c >>> 1; crc = (crc >>> 8) ^ c; } return (crc ^ 0xFFFFFFFF) >>> 0; }
@@ -1408,14 +1440,31 @@ function zipStore(files){ // files: [{name, data:Uint8Array}]
 }
 const XL_COL = i => { let s=''; i++; while(i>0){ const m=(i-1)%26; s=String.fromCharCode(65+m)+s; i=Math.floor((i-1)/26); } return s; };
 const xesc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-// estilos: 0 normal · 1 número · 2 texto negrito · 3 número negrito · 4 data · 5 cabeçalho (negrito, fundo) · 6 número negrito fundo · 7 número bloco (fundo claro) · 8 número inteiro negrito
-const XL_STYLES = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><numFmts count="2"><numFmt numFmtId="164" formatCode="#,##0.00_);\\(#,##0.00\\)"/><numFmt numFmtId="165" formatCode="#,##0_);[Red]\\(#,##0\\)"/></numFmts><fonts count="3"><font><sz val="8"/><name val="Verdana"/></font><font><b/><sz val="9"/><name val="Verdana"/></font><font><b/><sz val="9"/><color rgb="FFFFFFFF"/><name val="Verdana"/></font></fonts><fills count="5"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF002060"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFD3E6F8"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFFFFF00"/></patternFill></fill></fills><borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border><border><left style="thin"><color auto="1"/></left><right style="thin"><color auto="1"/></right><top style="thin"><color auto="1"/></top><bottom style="thin"><color auto="1"/></bottom><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="9"><xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1"/><xf numFmtId="164" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1"/><xf numFmtId="0" fontId="1" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1"/><xf numFmtId="165" fontId="1" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyBorder="1"/><xf numFmtId="14" fontId="1" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyBorder="1"/><xf numFmtId="0" fontId="2" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf><xf numFmtId="165" fontId="1" fillId="3" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1"/><xf numFmtId="164" fontId="0" fillId="3" borderId="1" xfId="0" applyNumberFormat="1" applyFill="1" applyBorder="1"/><xf numFmtId="0" fontId="1" fillId="4" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center"/></xf></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`;
-function xlSheet(cells, merges, widths, freeze){ // cells: {ref:{v|f|s, st}}
+// estilos (cellXfs): 0 texto · 1 número · 2 texto negrito · 3 número negrito (negativo em vermelho) · 4 data · 5 cabeçalho de coluna (branco sobre azul-marinho)
+// 6 número negrito com fundo azul-claro (linhas de bloco/subtotal) · 7 número com fundo amarelo-claro (projeção) · 8 código da UG (fundo amarelo) · 9 texto negrito com fundo azul-claro
+// 10 número negrito com fundo amarelo-claro (projeção em linha de bloco) · 11 texto de nota (itálico, cinza) · 12 texto pequeno centralizado (exec/proj) · 13 texto com quebra de linha
+const XL_STYLES = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><numFmts count="2"><numFmt numFmtId="164" formatCode="#,##0.00_);[Red]\\(#,##0.00\\)"/><numFmt numFmtId="165" formatCode="#,##0.00_);[Red]\\(#,##0.00\\);&quot;-&quot;_)"/></numFmts><fonts count="5"><font><sz val="8"/><name val="Verdana"/></font><font><b/><sz val="9"/><name val="Verdana"/></font><font><b/><sz val="9"/><color rgb="FFFFFFFF"/><name val="Verdana"/></font><font><i/><sz val="8"/><color rgb="FF595959"/><name val="Verdana"/></font><font><sz val="7"/><color rgb="FF595959"/><name val="Verdana"/></font></fonts><fills count="6"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF002060"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFD3E6F8"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFFFFF00"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFFFF2CC"/></patternFill></fill></fills><borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border><border><left style="thin"><color rgb="FFBFBFBF"/></left><right style="thin"><color rgb="FFBFBFBF"/></right><top style="thin"><color rgb="FFBFBFBF"/></top><bottom style="thin"><color rgb="FFBFBFBF"/></bottom><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="14">`
+ + `<xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1"/>`
+ + `<xf numFmtId="165" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1"/>`
+ + `<xf numFmtId="0" fontId="1" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1"/>`
+ + `<xf numFmtId="164" fontId="1" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyBorder="1"/>`
+ + `<xf numFmtId="14" fontId="1" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyBorder="1"/>`
+ + `<xf numFmtId="0" fontId="2" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>`
+ + `<xf numFmtId="164" fontId="1" fillId="3" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1"/>`
+ + `<xf numFmtId="165" fontId="0" fillId="5" borderId="1" xfId="0" applyNumberFormat="1" applyFill="1" applyBorder="1"/>`
+ + `<xf numFmtId="0" fontId="1" fillId="4" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>`
+ + `<xf numFmtId="0" fontId="1" fillId="3" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1"/>`
+ + `<xf numFmtId="164" fontId="1" fillId="5" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1"/>`
+ + `<xf numFmtId="0" fontId="3" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf>`
+ + `<xf numFmtId="0" fontId="4" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center"/></xf>`
+ + `<xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf>`
+ + `</cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`;
+function xlSheet(cells, merges, widths, freeze, rowHeights={}){ // cells: {ref:{v|f, st}}
   const rowsMap = {}; Object.entries(cells).forEach(([ref,c])=>{ const r = +ref.replace(/[A-Z]+/,''); (rowsMap[r]=rowsMap[r]||[]).push([ref,c]); });
-  let x = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">`;
-  if (freeze) x += `<sheetViews><sheetView workbookViewId="0"><pane xSplit="2" ySplit="${freeze}" topLeftCell="C${freeze+1}" activePane="bottomRight" state="frozen"/></sheetView></sheetViews>`;
+  let x = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheetPr><pageSetUpPr fitToPage="1"/></sheetPr>`;
+  x += `<sheetViews><sheetView workbookViewId="0" zoomScale="90">` + (freeze ? `<pane xSplit="2" ySplit="${freeze}" topLeftCell="C${freeze+1}" activePane="bottomRight" state="frozen"/>` : '') + `</sheetView></sheetViews>`;
   x += '<cols>'+widths.map((w,i)=>`<col min="${i+1}" max="${i+1}" width="${w}" customWidth="1"/>`).join('')+'</cols><sheetData>';
-  Object.keys(rowsMap).map(Number).sort((a,b)=>a-b).forEach(r=>{ x += `<row r="${r}">`; rowsMap[r].sort((a,b)=>{ const ca = a[0].replace(/\d+/,''), cb = b[0].replace(/\d+/,''); return ca.length-cb.length || (ca<cb?-1:ca>cb?1:0); }).forEach(([ref,c])=>{ const st = c.st!=null?` s="${c.st}"`:'';
+  Object.keys(rowsMap).map(Number).sort((a,b)=>a-b).forEach(r=>{ x += `<row r="${r}"${rowHeights[r]?` ht="${rowHeights[r]}" customHeight="1"`:''}>`; rowsMap[r].sort((a,b)=>{ const ca = a[0].replace(/\d+/,''), cb = b[0].replace(/\d+/,''); return ca.length-cb.length || (ca<cb?-1:ca>cb?1:0); }).forEach(([ref,c])=>{ const st = c.st!=null?` s="${c.st}"`:'';
     if (c.f!=null) x += `<c r="${ref}"${st}><f>${xesc(c.f)}</f></c>`;
     else if (typeof c.v==='number') x += `<c r="${ref}"${st}><v>${c.v}</v></c>`;
     else if (c.v!=null && c.v!=='') x += `<c r="${ref}"${st} t="inlineStr"><is><t xml:space="preserve">${xesc(c.v)}</t></is></c>`;
@@ -1425,58 +1474,95 @@ function xlSheet(cells, merges, widths, freeze){ // cells: {ref:{v|f|s, st}}
 }
 function xlWorkbook(sheets){ // sheets: [{name, xml}]
   const enc = s => new TextEncoder().encode(s); const files = [];
-  files.push({name:'[Content_Types].xml',data:enc(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>${sheets.map((s,i)=>`<Override PartName="/xl/worksheets/sheet${i+1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join('')}</Types>`)});
-  files.push({name:'_rels/.rels',data:enc(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`)});
-  files.push({name:'xl/workbook.xml',data:enc(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>${sheets.map((s,i)=>`<sheet name="${xesc(s.name)}" sheetId="${i+1}" r:id="rId${i+1}"/>`).join('')}</sheets><calcPr fullCalcOnLoad="1"/></workbook>`)});
+  files.push({name:'[Content_Types].xml',data:enc(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/><Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>${sheets.map((s,i)=>`<Override PartName="/xl/worksheets/sheet${i+1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join('')}</Types>`)});
+  files.push({name:'_rels/.rels',data:enc(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/><Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/></Relationships>`)});
+  const now = new Date().toISOString().replace(/\.\d+Z$/,'Z');
+  files.push({name:'docProps/core.xml',data:enc(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><dc:title>Relatório resumido das despesas de pessoal 2026 — UFPB e HULW</dc:title><dc:creator>CODEOR/PROPLAN/UFPB</dc:creator><dcterms:created xsi:type="dcterms:W3CDTF">${now}</dcterms:created><dcterms:modified xsi:type="dcterms:W3CDTF">${now}</dcterms:modified></cp:coreProperties>`)});
+  files.push({name:'docProps/app.xml',data:enc(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"><Application>Painel Folha UFPB 2026</Application></Properties>`)});
+  files.push({name:'xl/workbook.xml',data:enc(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><bookViews><workbookView xWindow="0" yWindow="0" windowWidth="28800" windowHeight="15000"/></bookViews><sheets>${sheets.map((s,i)=>`<sheet name="${xesc(s.name)}" sheetId="${i+1}" r:id="rId${i+1}"/>`).join('')}</sheets><calcPr fullCalcOnLoad="1"/></workbook>`)});
   files.push({name:'xl/_rels/workbook.xml.rels',data:enc(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${sheets.map((s,i)=>`<Relationship Id="rId${i+1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i+1}.xml"/>`).join('')}<Relationship Id="rId${sheets.length+1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`)});
   files.push({name:'xl/styles.xml',data:enc(XL_STYLES)});
   sheets.forEach((s,i)=>files.push({name:`xl/worksheets/sheet${i+1}.xml`,data:enc(s.xml)}));
   return zipStore(files);
 }
+function round2(v){ return Math.round((+v||0)*100)/100; }
+// colunas do modelo (com a coluna de previsão inserida depois da dotação): A cód · B nome · C–N meses · O total · P dotação · Q previsão (P−O) · R exec. ano anterior · S (vazia) · T projetado · U base PLOA
+const SPO_SUMCOLS = ['C','D','E','F','G','H','I','J','K','L','M','N','O','P','R','T','U'];
 function spoSheet(ug){
-  const R = spoModel(ug); const B = Object.fromEntries(R.blocks.map(b=>[b.key,b])); const NM = R.NM; const C = {}; const merges = [];
-  const col = i => XL_COL(i); const MC = i => col(2+i); // C..N = meses
+  const R = spoModel(ug); const B = Object.fromEntries(R.blocks.map(b=>[b.key,b])); const NM = R.NM; const C = {}; const merges = []; const hts = {};
+  const MC = i => XL_COL(2+i); // C..N = meses
   const set = (ref,v,st)=>{ C[ref] = {v, st}; }, setF = (ref,f,st)=>{ C[ref] = {f, st}; };
+  const numSt = (i,hdr)=> i>=NM ? (hdr?10:7) : (hdr?6:1);   // projeção com fundo amarelo-claro
   set('A1','Dotação',0); set('B1','ic',0); set('C1','IC - INCLUSIVE CONDICIONADO  ou   EC - EXCLUSIVE CONDICIONADO',0);
   set('A2','COORDENAÇÃO DE ESTUDOS E ACOMPANHAMENTO ORÇAMENTÁRIO',2); set('A3','CEAO/CGO/SPO/MEC',2);
-  setF('A4','"RELATÓRIO RESUMIDO DAS DESPESAS DE PESSOAL NO ÂMBITO DA "&A8',2); merges.push('A4:T4','A5:T5');
-  set('A6','Data Base:',2); { const [dd,mm,yy] = SPO.pos.split('/').map(Number); const serial = Math.round((Date.UTC(yy,mm-1,dd)-Date.UTC(1899,11,30))/86400000); set('B6',serial,4); } set('Q6',1,0);
-  set('A7',SPO_UG[ug].code,8); merges.push('A7:B7','A8:B8','O7:O8','P7:P8','Q7:Q8','S7:S8','T7:T8');
-  MESES_PT.forEach((m,i)=>{ set(MC(i)+'7',m,5); set(MC(i)+'8', i<NM?'exec':'proj',0); });
-  set('O7','TOTAL',5); set('P7','DOTAÇÃO ATUAL',5); set('Q7','EXEC. ANO ANTERIOR',5); set('S7','PROJETADO ANO SEGUINTE',5); set('T7','BASE PLOA ANO SEGUINTE',5);
+  setF('A4','"RELATÓRIO RESUMIDO DAS DESPESAS DE PESSOAL NO ÂMBITO DA "&A8',2); merges.push('A4:U4','A5:U5');
+  set('A5',`Posição SIAFI ${SPO.pos} · jan–${SPO.months[NM-1].toLowerCase()} executado (liquidado) · nov–dez projetado (fundo amarelo) · previsão = dotação atual − total`,11);
+  set('A6','Data Base:',2); { const [dd,mm,yy] = SPO.pos.split('/').map(Number); const serial = Math.round((Date.UTC(yy,mm-1,dd)-Date.UTC(1899,11,30))/86400000); set('B6',serial,4); } set('R6',1,0);
+  set('A7',SPO_UG[ug].code,8); merges.push('A7:B7','A8:B8','O7:O8','P7:P8','Q7:Q8','R7:R8','T7:T8','U7:U8'); hts[7] = 30;
+  MESES_PT.forEach((m,i)=>{ set(MC(i)+'7',m,5); set(MC(i)+'8', i<NM?'exec':'proj',12); });
+  set('O7','TOTAL',5); set('P7','DOTAÇÃO ATUAL',5); set('Q7','PREVISÃO (DOTAÇÃO − TOTAL)',5); set('R7','EXEC. ANO ANTERIOR',5); set('T7','PROJETADO ANO SEGUINTE',5); set('U7','BASE PLOA ANO SEGUINTE',5);
   set('A8',SPO_UG[ug].nome,2);
   let r = 10; const hdrRows = {};
   const blockRows = (b)=>{ const h = r; hdrRows[b.key]=h; const n = Math.max(1,b.rows.length); const first = h+1, last = h+n;
-    set(`A${h}`,b.title,2); merges.push(`A${h}:B${h}`);
-    for (let i=0;i<12;i++) setF(`${MC(i)}${h}`,`SUM(${MC(i)}${first}:${MC(i)}${last})`,6);
-    setF(`O${h}`,`SUM(O${first}:O${last})`,6); set(`P${h}`,round2(b.dot),3); set(`Q${h}`,round2(b.ex25),3); setF(`S${h}`,`SUM(S${first}:S${last})`,3); setF(`T${h}`,`SUM(T${first}:T${last})`,3);
+    set(`A${h}`,b.title,9); set(`B${h}`,'',9); merges.push(`A${h}:B${h}`);
+    for (let i=0;i<12;i++) setF(`${MC(i)}${h}`,`SUM(${MC(i)}${first}:${MC(i)}${last})`,numSt(i,true));
+    setF(`O${h}`,`SUM(O${first}:O${last})`,6); set(`P${h}`,round2(b.dot),6); setF(`Q${h}`,`P${h}-O${h}`,6); set(`R${h}`,round2(b.ex25),6); set(`S${h}`,'',9); setF(`T${h}`,`SUM(T${first}:T${last})`,6); setF(`U${h}`,`SUM(U${first}:U${last})`,6);
     r = h+1;
-    (b.rows.length? b.rows : [null]).forEach(o=>{ if (o){ set(`A${r}`,o.nd,0); set(`B${r}`,o.nome,0); o.m.forEach((v,i)=>set(`${MC(i)}${r}`,round2(v),1)); set(`T${r}`,round2(o.t),1); if (o.mult) setF(`S${r}`,`$T${r}*${o.mult}`,1); } else { set(`B${r}`,'(sem execução em 2026)',0); for (let i=0;i<12;i++) set(`${MC(i)}${r}`,0,1); }
-      setF(`O${r}`,`SUM($C${r}:$N${r})`,1); r++; });
+    (b.rows.length? b.rows : [null]).forEach(o=>{ if (o){ set(`A${r}`,o.nd,0); set(`B${r}`,o.nome,0); o.m.forEach((v,i)=>set(`${MC(i)}${r}`,round2(v),numSt(i,false))); set(`U${r}`,round2(o.t),1); if (o.mult) setF(`T${r}`,`$U${r}*${o.mult}`,1); else set(`T${r}`,0,1); } else { set(`A${r}`,'',0); set(`B${r}`,'(sem execução em 2026)',0); for (let i=0;i<12;i++) set(`${MC(i)}${r}`,0,numSt(i,false)); set(`T${r}`,0,1); set(`U${r}`,0,1); }
+      setF(`O${r}`,`SUM($C${r}:$N${r})`,1); set(`P${r}`,'',0); set(`Q${r}`,'',0); set(`R${r}`,'',0); r++; });
     r++; };
   blockRows(B.ATIVO); blockRows(B.INATIVO); blockRows(B.BENESP);
   // PRECAT: duas linhas como no modelo
-  { const h = r; hdrRows.PRECAT = h; set(`A${h}`,B.PRECAT.title,2); merges.push(`A${h}:B${h}`); for (let i=0;i<12;i++) setF(`${MC(i)}${h}`,`SUM(${MC(i)}${h+1}:${MC(i)}${h+2})`,6); setF(`O${h}`,`SUM(O${h+1}:O${h+2})`,6); set(`P${h}`,0,3); setF(`Q${h}`,`SUM(Q${h+1}:Q${h+2})`,3); setF(`S${h}`,`SUM(S${h+1}:S${h+2})`,3); setF(`T${h}`,`SUM(T${h+1}:T${h+2})`,3);
-    set(`A${h+1}`,'ED_SENTJUD',0); set(`B${h+1}`,'DESP. PRIMÁRIAS',0); for (let i=0;i<11;i++) set(`${MC(i)}${h+1}`,0,1); setF(`N${h+1}`,`P${h}-SUM(C${h+1}:M${h+1})`,1); setF(`O${h+1}`,`SUM($C${h+1}:$N${h+1})`,1); set(`Q${h+1}`,0,1); set(`T${h+1}`,0,1);
-    set(`B${h+2}`,'AJUSTES DE PROJEÇÃO',0); setF(`O${h+2}`,`SUM($C${h+2}:$N${h+2})`,1); r = h+4; }
-  const subP = r; set(`A${subP}`,'SUBTOTAL DESP PRIMÁRIAS',2); merges.push(`A${subP}:B${subP}`);
-  ['C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q','S','T'].forEach(c=>setF(`${c}${subP}`,`${c}${hdrRows.ATIVO}+${c}${hdrRows.INATIVO}+${c}${hdrRows.BENESP}+${c}${hdrRows.PRECAT}`,7)); r = subP+2;
+  { const h = r; hdrRows.PRECAT = h; set(`A${h}`,B.PRECAT.title,9); set(`B${h}`,'',9); merges.push(`A${h}:B${h}`); for (let i=0;i<12;i++) setF(`${MC(i)}${h}`,`SUM(${MC(i)}${h+1}:${MC(i)}${h+2})`,numSt(i,true)); setF(`O${h}`,`SUM(O${h+1}:O${h+2})`,6); set(`P${h}`,0,6); setF(`Q${h}`,`P${h}-O${h}`,6); setF(`R${h}`,`SUM(R${h+1}:R${h+2})`,6); set(`S${h}`,'',9); setF(`T${h}`,`SUM(T${h+1}:T${h+2})`,6); setF(`U${h}`,`SUM(U${h+1}:U${h+2})`,6);
+    set(`A${h+1}`,'ED_SENTJUD',0); set(`B${h+1}`,'DESP. PRIMÁRIAS',0); for (let i=0;i<11;i++) set(`${MC(i)}${h+1}`,0,numSt(i,false)); setF(`N${h+1}`,`P${h}-SUM(C${h+1}:M${h+1})`,7); setF(`O${h+1}`,`SUM($C${h+1}:$N${h+1})`,1); set(`R${h+1}`,0,1); set(`T${h+1}`,0,1); set(`U${h+1}`,0,1);
+    set(`A${h+2}`,'',0); set(`B${h+2}`,'AJUSTES DE PROJEÇÃO',0); for (let i=0;i<12;i++) set(`${MC(i)}${h+2}`,0,numSt(i,false)); setF(`O${h+2}`,`SUM($C${h+2}:$N${h+2})`,1); set(`R${h+2}`,0,1); set(`T${h+2}`,0,1); set(`U${h+2}`,0,1); r = h+4; }
+  const sumRow = (label, expr, st=6)=>{ set(`A${r}`,label,9); set(`B${r}`,'',9); merges.push(`A${r}:B${r}`); SPO_SUMCOLS.forEach(c=>setF(`${c}${r}`,expr(c),st)); setF(`Q${r}`,`P${r}-O${r}`,st); set(`S${r}`,'',9); const k = r; r += 2; return k; };
+  const subP = sumRow('SUBTOTAL DESP PRIMÁRIAS', c=>`${c}${hdrRows.ATIVO}+${c}${hdrRows.INATIVO}+${c}${hdrRows.BENESP}+${c}${hdrRows.PRECAT}`);
   blockRows(B.RPPS);
-  const subF = r; set(`A${subF}`,'SUBTOTAL DESP FINANCEIRAS',2); merges.push(`A${subF}:B${subF}`); ['C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q','S','T'].forEach(c=>setF(`${c}${subF}`,`${c}${hdrRows.RPPS}`,7)); r = subF+2;
-  const tot = r; set(`A${tot}`,'TOTAL',2); merges.push(`A${tot}:B${tot}`); ['C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q','S','T'].forEach(c=>setF(`${c}${tot}`,`SUM(${c}${subP}+${c}${subF})`,6)); r = tot+2;
-  // saldos
+  const subF = sumRow('SUBTOTAL DESP FINANCEIRAS', c=>`${c}${hdrRows.RPPS}`);
+  const tot = sumRow('TOTAL', c=>`${c}${subP}+${c}${subF}`);
+  // saldos acumulados (dotação − execução), como no modelo
   const sal = [['SALDO ATIVOS','ATIVO'],['SALDO INATIVOS','INATIVO'],['SALDO BENEFÍCIO ESPECIAL','BENESP'],['SALDO PRECAT E SENT EMP PUBLICA','PRECAT'],['SALDO CPSS - AÇÃO 09HB','RPPS']]; const salRows = [];
-  sal.forEach(([lab,k])=>{ const h = hdrRows[k]; set(`A${r}`,lab,2); merges.push(`A${r}:B${r}`); setF(`C${r}`,`P${h}-C${h}`,1); for (let i=1;i<12;i++) setF(`${MC(i)}${r}`,`+${MC(i-1)}${r}-${MC(i)}${h}`,1); salRows.push(r); r++; });
-  set(`A${r}`,'SALDO TOTAL',2); merges.push(`A${r}:B${r}`); for (let i=0;i<12;i++) setF(`${MC(i)}${r}`,`SUM(${MC(i)}${salRows[0]}:${MC(i)}${salRows[salRows.length-1]})`,3); r += 3;
+  sal.forEach(([lab,k])=>{ const h = hdrRows[k]; set(`A${r}`,lab,2); set(`B${r}`,'',2); merges.push(`A${r}:B${r}`); setF(`C${r}`,`P${h}-C${h}`,1); for (let i=1;i<12;i++) setF(`${MC(i)}${r}`,`+${MC(i-1)}${r}-${MC(i)}${h}`,1); salRows.push(r); r++; });
+  set(`A${r}`,'SALDO TOTAL',9); set(`B${r}`,'',9); merges.push(`A${r}:B${r}`); for (let i=0;i<12;i++) setF(`${MC(i)}${r}`,`SUM(${MC(i)}${salRows[0]}:${MC(i)}${salRows[salRows.length-1]})`,6); r += 3;
   set(`L${r}`,'OUTUBRO',2); set(`M${r}`,'NOVEMBRO',2); set(`N${r}`,'DEZEMBRO',2); r++;
   blockRows(B.SAUDE); blockRows(B.AUX); blockRows(B.PENSESP);
-  r += 1; set(`A${r}`,`Fonte: painel Folha de pessoal da UFPB 2026 (CODEOR/PROPLAN). jan–ago = pagamentos SIAFI por competência; set = liquidado jan–set (posição ${SPO.pre}) − jan–ago; out = liquidado na apropriação (posição ${SPO.pos}); nov–dez = projeção (deriva ${nf(2).format(R.g*100)}% a.m. e fatores sazonais da aba Projeções, rateados à UG). Linhas 13º e férias recebem o excedente sazonal; sentenças e exercícios anteriores pela média do ano.`,0);
-  const widths = [14,52,17,17,17,17,17,17,17,17,17,17,17,17,17,17.5,20,3.5,19,15];
-  return xlSheet(C, merges, widths, 8);
+  sumRow('TOTAL BENEFÍCIOS', c=>`${c}${hdrRows.SAUDE}+${c}${hdrRows.AUX}+${c}${hdrRows.PENSESP}`);
+  set(`A${r}`,`Fonte: painel Folha de pessoal da UFPB 2026 (CODEOR/PROPLAN), posição SIAFI ${SPO.pos}. jan–ago = pagamentos SIAFI por competência da folha; set = liquidado jan–set (posição ${SPO.pre}) − jan–ago; out = liquidado na apropriação. Nov–dez (fundo amarelo) = projeção: linhas regulares pela deriva de ${nf(2).format(R.g*100)}% a.m.; sentenças judiciais e exercícios anteriores pela média jan–out; 13º e férias recebem o excedente sazonal da projeção por ação, rateado à UG pela participação de outubro. PREVISÃO = DOTAÇÃO ATUAL − TOTAL (positivo sobra, negativo falta). PROJETADO ANO SEGUINTE = BASE PLOA × 13,3333 (vencimentos e proventos), × 13 (patronal 31911303) ou × 12 (demais). Dotação atual e execução do ano anterior por ação da UG (PTRES do localizador). Ver aba "Memória" para a conciliação com o SIAFI.`,11); merges.push(`A${r}:U${r}`); hts[r] = 64;
+  const widths = [14,52,17,17,17,17,17,17,17,17,17,17,17,17,17.5,17.5,19,19,3.5,19,16];
+  return xlSheet(C, merges, widths, 8, hts);
 }
-function round2(v){ return Math.round((+v||0)*100)/100; }
+function spoMemoSheet(){
+  const C = {}; const merges = []; const hts = {}; const set = (ref,v,st)=>{ C[ref] = {v, st}; }; const NM = SPO.months.length;
+  const RU = spoModel('UFPB'), RH = spoModel('HULW'); const pr = RU.pr;
+  set('A1','MEMÓRIA DE CÁLCULO — RELATÓRIO RESUMIDO DAS DESPESAS DE PESSOAL 2026 (UFPB 26240 E HULW 26371)',2); merges.push('A1:J1');
+  set('A2',`Gerado pelo painel Folha de pessoal da UFPB 2026 (CODEOR/PROPLAN) em ${new Date().toLocaleDateString('pt-BR')} · posição SIAFI ${SPO.pos} · posição anterior (base de setembro) ${SPO.pre}`,11); merges.push('A2:J2');
+  let r = 4; set(`A${r}`,'1. Parâmetros da projeção (aba Projeções do painel)',9); merges.push(`A${r}:J${r}`); r++;
+  [['Deriva mensal (crescimento vegetativo)', nf(2).format(P.g)+'% a.m.'],['Fator sazonal 13º — 20TP novembro',nf(3).format(P.fn20)],['Fator sazonal 13º/férias — 20TP dezembro',nf(3).format(P.fd20)],['Fator sazonal 13º — 0181 novembro',nf(3).format(P.fn01)],['Fator sazonal patronal — 09HB novembro',nf(3).format(P.fn09)],['Meses executados (liquidado no SIAFI)',`${NM} (jan–${SPO.months[NM-1].toLowerCase()})`]].forEach(([k,v])=>{ set(`A${r}`,k,0); set(`B${r}`,'',0); merges.push(`A${r}:B${r}`); set(`C${r}`,v,0); r++; });
+  r++; set(`A${r}`,'2. Conciliação por ação: SIAFI liquidado jan–out, projeção nov–dez e distribuição entre UGs',9); merges.push(`A${r}:J${r}`); r++;
+  ['Ação','','Liquidado jan–out (SIAFI)','UFPB jan–out','HULW jan–out','Nov (proj.)','Dez (proj.)','Total 2026','Dotação atual (UFPB+HULW)','Previsão (dot − total)'].forEach((h,i)=>set(`${XL_COL(i)}${r}`,h,5)); merges.push(`A${r}:B${r}`); hts[r]=30; r++;
+  const r0 = r; const tot = Array(8).fill(0);
+  ACOES_ALL.forEach(a=>{ const rowsA = SPO.rows.filter(x=>x.acao===a); if (!rowsA.length && !pr[a]) return;
+    const liq = sum(rowsA.map(x=>sum(x.m))); const lu = sum(rowsA.filter(x=>x.ug==='UFPB').map(x=>sum(x.m))), lh = liq-lu; const nov = pr[a]?pr[a].nov:0, dez = pr[a]?pr[a].dez:0; const dot = ((SPO.dot.UFPB||{})[a]||0)+((SPO.dot.HULW||{})[a]||0); const t = liq+nov+dez;
+    set(`A${r}`,a,0); set(`B${r}`,ACOES[a]||a,0); [liq,lu,lh,nov,dez,t,dot,dot-t].forEach((v,i)=>{ set(`${XL_COL(2+i)}${r}`,round2(v),i>=3&&i<=4?7:1); tot[i]+=v; }); r++; });
+  set(`A${r}`,'TOTAL',9); set(`B${r}`,'',9); tot.forEach((v,i)=>set(`${XL_COL(2+i)}${r}`,round2(v),6)); r+=2;
+  set(`A${r}`,'3. Totais das abas por UG (conferência com o quadro 2)',9); merges.push(`A${r}:J${r}`); r++;
+  ['UG','','Executado jan–out','Nov (proj.)','Dez (proj.)','Total 2026','Dotação atual','Previsão (dot − total)','Exec. 2025 (empenhado)','Base PLOA 2027'].forEach((h,i)=>set(`${XL_COL(i)}${r}`,h,5)); merges.push(`A${r}:B${r}`); hts[r]=30; r++;
+  [['UFPB',RU],['HULW',RH]].forEach(([u,RR])=>{ const B = Object.fromEntries(RR.blocks.map(b=>[b.key,b])); const T = spoAgg(B,SPO_PRIM.concat(SPO_FIN)), BN = spoAgg(B,SPO_BEN);
+    [['pessoal e encargos (20TP, 0181, 00S6, 09HB)',T],['benefícios (2004, 212B, 0536)',BN]].forEach(([lab,X])=>{ set(`A${r}`,SPO_UG[u].code+' '+SPO_UG[u].nome,0); set(`B${r}`,lab,0); [sum(X.m.slice(0,NM)),X.m[10],X.m[11],X.tot,X.dot,X.prev,X.ex25,X.s].forEach((v,i)=>set(`${XL_COL(2+i)}${r}`,round2(v),i===1||i===2?7:1)); r++; }); });
+  r++; set(`A${r}`,'4. Método por tipo de linha',9); merges.push(`A${r}:J${r}`); r++;
+  [['Linhas regulares (vencimentos, proventos, gratificações, benefícios, patronal)','Nov = outubro × (1 + deriva); Dez = outubro × (1 + deriva)²; depois ajustadas para que a soma da ação na UG feche com a projeção da aba Projeções (rateada pela participação da UG em outubro).'],
+   ['13º salário (31901143, 31900413, 31900106, 31900303) e férias (31901145, 31900414, 31900107)','Zeradas na deriva; recebem o excedente sazonal da ação (projeção − soma das linhas regulares), na proporção da base de outubro de cada vínculo. Em dezembro, na 20TP, 60% para o 13º e 40% para férias (como no modelo de 2025).'],
+   ['Sentenças judiciais e despesas de exercícios anteriores (31909x, 33909x)','Média jan–out em novembro e dezembro.'],
+   ['Patronal RPPS (31911303)','Absorve o excedente sazonal da 09HB (2ª parcela do 13º).'],
+   ['BASE PLOA ANO SEGUINTE','Linha regular: outubro × (1 + deriva)³ (valor mensal de janeiro/2027). Sentenças/exercícios anteriores: média do ano. 13º e férias: zero (embutidos no multiplicador).'],
+   ['PROJETADO ANO SEGUINTE','Base × 13,3333 (vencimentos e proventos, incluindo 13º e 1/3 de férias), × 13 (patronal RPPS) ou × 12 (demais).'],
+   ['Dotação atual e execução anterior','SIAFI/Tesouro Gerencial por ação e UG (PTRES do localizador; HULW = PTRES do localizador do hospital e PI V0000N71*). 2025 = empenhado.'],
+   ['Previsão','Dotação atual − total 2026: positivo sobra, negativo falta (necessidade de suplementação), zero quando a dotação é exatamente consumida.']].forEach(([k,v])=>{ set(`A${r}`,k,13); set(`B${r}`,'',13); merges.push(`A${r}:B${r}`); set(`C${r}`,v,13); merges.push(`C${r}:J${r}`); hts[r]=42; r++; });
+  return xlSheet(C, merges, [16,44,20,18,18,18,18,18,22,20], 0, hts);
+}
 function spoExport(){
-  const sheets = [{name:'26240',xml:spoSheet('UFPB')},{name:'26371',xml:spoSheet('HULW')}];
+  const sheets = [{name:'26240',xml:spoSheet('UFPB')},{name:'26371',xml:spoSheet('HULW')},{name:'Memória',xml:spoMemoSheet()}];
   const data = xlWorkbook(sheets); const blob = new Blob([data],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
   const filename = `UFPB_FOLHA_PROJECAO_2026_UFPB_E_HULW_${SPO.pos.replace(/\//g,'-')}.xlsx`; const btn = $('spo-export');
   const fallback = ()=>{ const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = filename; document.body.appendChild(a); a.click(); setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); },500); };
