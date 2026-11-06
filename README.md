@@ -7,7 +7,7 @@ Abra `index.html` no navegador (ou pelo GitHub Pages, se habilitado).
 ## Conteúdo
 
 - Visão executiva, composição da folha (SIGEPE/DDP), descontos e líquido
-- Execução SIAFI 2026 (posição de 28/10/2026), conciliação SIGEPE × SIAFI e mês a mês
+- Execução SIAFI 2026 (posição de 06/11/2026), conciliação SIGEPE × SIAFI e mês a mês
 - Pagamentos SIAFI 2026 por mês e por documento
 - Histórico 2016–2026 e projeções 2026–2027
 - Crédito e detalhamento por PTRES (como liberar o disponível não detalhado)
